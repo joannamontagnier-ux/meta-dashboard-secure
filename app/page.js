@@ -71,13 +71,47 @@ export default function Home() {
   }, [metaUserId]);
 
   function loadUserData(userId) {
+    // Migration : récupère les anciennes données si les nouvelles clés sont vides
+    const OLD_MARGINS_KEY = "meta-dashboard-margin-fields-v1";
+    const OLD_ROWS_KEY = "meta-dashboard-campaign-rows-v1";
+
     try {
       const savedRows = window.localStorage.getItem(getStorageKey(userId, "rows"));
-      setRows(savedRows ? JSON.parse(savedRows) : []);
+      if (savedRows) {
+        setRows(JSON.parse(savedRows));
+      } else {
+        // Tente de récupérer l'ancienne clé
+        const oldRows = window.localStorage.getItem(OLD_ROWS_KEY);
+        if (oldRows) {
+          const parsed = JSON.parse(oldRows);
+          setRows(parsed);
+          window.localStorage.setItem(getStorageKey(userId, "rows"), oldRows);
+        } else {
+          setRows([]);
+        }
+      }
     } catch { setRows([]); }
+
     try {
       const savedMargins = window.localStorage.getItem(getStorageKey(userId, "margins"));
-      setMarginFields(savedMargins ? JSON.parse(savedMargins) : {});
+      if (savedMargins) {
+        setMarginFields(JSON.parse(savedMargins));
+      } else {
+        // Tente de récupérer l'ancienne clé
+        const oldMargins = window.localStorage.getItem(OLD_MARGINS_KEY);
+        if (oldMargins) {
+          const parsed = JSON.parse(oldMargins);
+          setMarginFields(parsed);
+          window.localStorage.setItem(getStorageKey(userId, "margins"), oldMargins);
+          // Migre aussi vers Supabase
+          fetch("/api/margins", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ margins: parsed, userId }),
+          }).catch(console.log);
+        } else {
+          setMarginFields({});
+        }
+      }
     } catch { setMarginFields({}); }
 
     fetch(`/api/margins?userId=${userId}`)
