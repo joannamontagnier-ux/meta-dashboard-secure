@@ -629,6 +629,21 @@ export default function Home() {
               )}
             </div>
 
+            {/* Raccourcis de période */}
+            <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "10px" }}>
+              {[
+                { label: "Aujourd'hui", fn: () => { const d = today(); setStartDate(d); setEndDate(d); } },
+                { label: "Hier", fn: () => { const d = daysAgo(1); setStartDate(d); setEndDate(d); } },
+                { label: "7 derniers jours", fn: () => { setStartDate(daysAgo(6)); setEndDate(today()); } },
+                { label: "30 derniers jours", fn: () => { setStartDate(daysAgo(29)); setEndDate(today()); } },
+                { label: "Ce mois", fn: () => { setStartDate(firstOfMonth()); setEndDate(today()); } },
+                { label: "Mois dernier", fn: () => { const d = lastMonth(); setStartDate(d.start); setEndDate(d.end); } },
+                { label: "Tout effacer", fn: () => { setStartDate(""); setEndDate(""); } },
+              ].map(({ label, fn }) => (
+                <button key={label} type="button" onClick={fn} style={shortcutBtnStyle}>{label}</button>
+              ))}
+            </div>
+
             {/* Ligne 1 : dates + recherche */}
             <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", marginBottom: "12px" }}>
               <div style={{ display: "flex", flexDirection: "column", gap: "4px", minWidth: "140px" }}>
@@ -1071,6 +1086,13 @@ const bmBadgeStyle = { display: "inline-block", padding: "2px 8px", borderRadius
 const alertBadgeStyle = { display: "inline-block", padding: "2px 8px", borderRadius: "20px", background: "#fee2e2", color: "#991b1b", fontSize: "11px", fontWeight: 600, whiteSpace: "nowrap" };
 const okBadgeStyle = { display: "inline-block", padding: "2px 8px", borderRadius: "20px", background: "#dcfce7", color: "#166534", fontSize: "11px", fontWeight: 600 };
 const spinnerStyle = { width: "48px", height: "48px", border: "4px solid #e5e7eb", borderTop: "4px solid #4f46e5", borderRadius: "50%", margin: "0 auto", animation: "spin 1s linear infinite" };
+// ─── Utilitaires date ────────────────────────────────────────────────────────
+function today() { return new Date().toISOString().slice(0, 10); }
+function daysAgo(n) { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); }
+function firstOfMonth() { const d = new Date(); d.setDate(1); return d.toISOString().slice(0, 10); }
+function lastMonth() { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1); const start = d.toISOString().slice(0, 10); const last = new Date(d.getFullYear(), d.getMonth() + 1, 0); return { start, end: last.toISOString().slice(0, 10) }; }
+
+const shortcutBtnStyle = { padding: "5px 10px", borderRadius: "20px", border: "1px solid #e5e7eb", background: "white", color: "#374151", fontSize: "12px", fontWeight: 500, cursor: "pointer", whiteSpace: "nowrap" };
 const autoRefreshBtnStyle = { display: "flex", alignItems: "center", gap: "6px", padding: "5px 10px", borderRadius: "20px", border: "1px solid", fontSize: "12px", fontWeight: 500, cursor: "pointer", background: "none" };
 const toggleAllBtnStyle = { padding: "4px 10px", borderRadius: "6px", border: "1px solid #e5e7eb", background: "white", color: "#6366f1", fontSize: "12px", fontWeight: 600, cursor: "pointer" };
 const paginationStyle = { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px", borderTop: "1px solid #f3f4f6", flexWrap: "wrap", gap: "10px" };
