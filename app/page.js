@@ -100,6 +100,7 @@ export default function Home() {
   const [metaUserName, setMetaUserName] = useState(null);
 
   const [rows, setRows] = useState([]);
+  const [accountList, setAccountList] = useState([]); // tous les comptes/BM même sans dépenses
   const [marginFields, setMarginFields] = useState({});
   const [loadStatus, setLoadStatus] = useState("");
   const [loading, setLoading] = useState(false);
@@ -186,6 +187,11 @@ export default function Home() {
       }
     } catch { setMarginFields({}); }
 
+    try {
+      const savedAL = window.localStorage.getItem(getStorageKey(userId, "accountList"));
+      if (savedAL) setAccountList(JSON.parse(savedAL));
+    } catch { setAccountList([]); }
+
     fetch(`/api/margins?userId=${userId}`)
       .then((r) => r.json())
       .then((data) => {
@@ -253,12 +259,19 @@ export default function Home() {
         body: JSON.stringify({ accessToken: token, startDate, endDate }),
       });
       const data = await res.json();
+
+      // Mettre à jour la liste exhaustive des comptes/BM
+      if (data.accountList?.length > 0) {
+        setAccountList(data.accountList);
+        if (metaUserId) window.localStorage.setItem(getStorageKey(metaUserId, "accountList"), JSON.stringify(data.accountList));
+      }
+
       if (data.rows?.length > 0) {
         const nextRows = mergeCampaignRows(rows, data.rows);
         saveCampaignRows(nextRows);
-        setLoadStatus(`${data.rows.length} campagne(s) chargée(s), ${nextRows.length} au total.`);
+        setLoadStatus(`${data.rows.length} campagne(s) chargée(s) · ${data.accountList?.length || 0} compte(s) trouvé(s).`);
       } else {
-        setLoadStatus("Aucune campagne trouvée. Les données précédentes sont conservées.");
+        setLoadStatus(`Aucune dépense sur cette période · ${data.accountList?.length || 0} compte(s) trouvé(s).`);
       }
     } catch (e) { console.log(e); setLoadStatus("Erreur de chargement. Les données précédentes sont conservées."); }
     setLoading(false);
@@ -358,12 +371,23 @@ export default function Home() {
     return { ...row, spend, leads, client, clientCpl, validatedLeads, revenue, margin, marginRate: revenue > 0 ? margin / revenue : 0, roas, realCostPerLead, alerts, alertCount: alerts.length };
   }), [rows, marginFields]);
 
-  // Options de filtre — compte pub filtrée selon BM sélectionnés
-  const uniqueBms = useMemo(() => [...new Set(rows.map((r) => r.businessName).filter(Boolean))].sort(), [rows]);
+  // Options de filtre — combine les données chargées + tous les comptes connus
+  const uniqueBms = useMemo(() => {
+    const fromRows = rows.map((r) => r.businessName).filter(Boolean);
+    const fromList = accountList.map((a) => a.businessName).filter(Boolean);
+    return [...new Set([...fromRows, ...fromList])].sort();
+  }, [rows, accountList]);
+
   const uniqueAccounts = useMemo(() => {
-    const filtered = bmFilter.length > 0 ? rows.filter((r) => bmFilter.includes(r.businessName)) : rows;
-    return [...new Set(filtered.map((r) => r.accountName).filter(Boolean))].sort();
-  }, [rows, bmFilter]);
+    const validBms = bmFilter.length > 0 ? bmFilter : null;
+    const fromRows = rows
+      .filter((r) => !validBms || validBms.includes(r.businessName))
+      .map((r) => r.accountName).filter(Boolean);
+    const fromList = accountList
+      .filter((a) => !validBms || validBms.includes(a.businessName))
+      .map((a) => a.accountName).filter(Boolean);
+    return [...new Set([...fromRows, ...fromList])].sort();
+  }, [rows, accountList, bmFilter]);
   const uniqueCampaigns = useMemo(() => {
     const filtered = rows.filter((r) =>
       (bmFilter.length === 0 || bmFilter.includes(r.businessName)) &&
