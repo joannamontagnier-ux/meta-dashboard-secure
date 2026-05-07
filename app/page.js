@@ -203,12 +203,25 @@ export default function Home() {
       if (savedRows) {
         setRows(JSON.parse(savedRows));
       } else {
+        // Essaie l'ancienne clé localStorage
         const oldRows = window.localStorage.getItem(OLD_ROWS_KEY);
         if (oldRows) {
           const parsed = JSON.parse(oldRows);
           setRows(parsed);
           window.localStorage.setItem(getStorageKey(userId, "rows"), oldRows);
-        } else { setRows([]); }
+        } else {
+          // Essaie Supabase en dernier recours
+          fetch(`/api/margins?type=rows&userId=${userId}`)
+            .then((r) => r.json())
+            .then((data) => {
+              if (data.rows?.length > 0) {
+                setRows(data.rows);
+                window.localStorage.setItem(getStorageKey(userId, "rows"), JSON.stringify(data.rows));
+                setLoadStatus(`${data.rows.length} campagne(s) restaurée(s) depuis Supabase.`);
+              }
+            })
+            .catch(console.log);
+        }
       }
     } catch { setRows([]); }
 
@@ -290,7 +303,15 @@ export default function Home() {
 
   function saveCampaignRows(nextRows) {
     setRows(nextRows);
-    if (metaUserId) window.localStorage.setItem(getStorageKey(metaUserId, "rows"), JSON.stringify(nextRows));
+    if (metaUserId) {
+      window.localStorage.setItem(getStorageKey(metaUserId, "rows"), JSON.stringify(nextRows));
+      // Sauvegarde aussi dans Supabase
+      fetch("/api/margins", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "rows", rows: nextRows, userId: metaUserId }),
+      }).catch(console.log);
+    }
   }
 
   async function loadData() {
