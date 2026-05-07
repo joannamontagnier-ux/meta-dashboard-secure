@@ -125,6 +125,12 @@ export default function Home() {
   const [importStatus, setImportStatus] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  const PAGE_SIZE = 20;
+  const [showAll, setShowAll] = useState(false);
+  const [globalPage, setGlobalPage] = useState(1);
+  const [clientPage, setClientPage] = useState(1);
+  const [campaignPage, setCampaignPage] = useState(1);
+
   const saveRequestRef = useRef(0);
   const importInputRef = useRef(null);
 
@@ -430,11 +436,22 @@ export default function Home() {
 
   const activeFilterCount = bmFilter.length + accountFilter.length + campaignFilter.length + clientFilter.length;
 
+  // Reset pagination quand les filtres changent
+  useEffect(() => { setGlobalPage(1); setClientPage(1); setCampaignPage(1); }, [bmFilter, accountFilter, campaignFilter, clientFilter, startDate, endDate, searchText]);
+
   const totals = summarize(filteredRows);
   const alertRows = filteredRows.filter((r) => r.alertCount > 0);
   const clientRows = groupBy(filteredRows, "client");
   const campaignRows = groupBy(filteredRows, "campaignName");
   const chartData = buildChartData(filteredRows, chartMode);
+
+  // Pagination
+  const paginatedRows = showAll ? filteredRows : filteredRows.slice((globalPage - 1) * PAGE_SIZE, globalPage * PAGE_SIZE);
+  const paginatedClientRows = showAll ? clientRows : clientRows.slice((clientPage - 1) * PAGE_SIZE, clientPage * PAGE_SIZE);
+  const paginatedCampaignRows = showAll ? campaignRows : campaignRows.slice((campaignPage - 1) * PAGE_SIZE, campaignPage * PAGE_SIZE);
+  const totalGlobalPages = Math.ceil(filteredRows.length / PAGE_SIZE);
+  const totalClientPages = Math.ceil(clientRows.length / PAGE_SIZE);
+  const totalCampaignPages = Math.ceil(campaignRows.length / PAGE_SIZE);
 
   const exportCsv = useCallback(async () => {
     if (!filteredRows.length) { setExportStatus("Aucune ligne à exporter."); return; }
@@ -643,7 +660,7 @@ export default function Home() {
                     <tbody>
                       {filteredRows.length === 0 ? (
                         <tr><td colSpan="16" style={{ ...tdStyle, textAlign: "center", padding: "40px", color: "#9ca3af" }}>Aucune campagne avec les filtres actuels.</td></tr>
-                      ) : filteredRows.map((row, i) => (
+                      ) : paginatedRows.map((row, i) => (
                         <tr key={`${rowKey(row)}-${i}`} style={i % 2 === 0 ? { background: "white" } : { background: "#fafafa" }}>
                           <td style={tdStyle}><span style={bmBadgeStyle}>{row.businessName || "—"}</span></td>
                           <td style={tdStyle}>{row.isManual ? <input value={row.accountName} onChange={(e) => updateManualRow(row, "accountName", e.target.value)} style={cellInputStyle} /> : <span style={{ fontSize: "12px", color: "#6b7280" }}>{row.accountName}</span>}</td>
@@ -667,11 +684,14 @@ export default function Home() {
                   </table>
                 </div>
               )}
+              {totalGlobalPages > 1 && (
+                <Pagination current={globalPage} total={totalGlobalPages} onChange={setGlobalPage} count={filteredRows.length} showAll={showAll} onToggleAll={() => { setShowAll(!showAll); setGlobalPage(1); }} />
+              )}
             </div>
           )}
 
-          {activeView === "client" && <SummaryTable title="Performance par client" labelHeader="Client" rows={clientRows} />}
-          {activeView === "campaign" && <SummaryTable title="Performance par campagne" labelHeader="Campagne" rows={campaignRows} />}
+          {activeView === "client" && <SummaryTable title="Performance par client" labelHeader="Client" rows={paginatedClientRows} totalRows={clientRows.length} currentPage={clientPage} totalPages={totalClientPages} onPageChange={setClientPage} showAll={showAll} onToggleAll={() => { setShowAll(!showAll); setClientPage(1); }} />}
+          {activeView === "campaign" && <SummaryTable title="Performance par campagne" labelHeader="Campagne" rows={paginatedCampaignRows} totalRows={campaignRows.length} currentPage={campaignPage} totalPages={totalCampaignPages} onPageChange={setCampaignPage} showAll={showAll} onToggleAll={() => { setShowAll(!showAll); setCampaignPage(1); }} />}
 
           {activeView === "charts" && (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(500px, 1fr))", gap: "20px" }}>
@@ -741,12 +761,13 @@ export default function Home() {
 
 // ─── Composants ──────────────────────────────────────────────────────────────
 
-function SummaryTable({ title, labelHeader, rows }) {
+function SummaryTable({ title, labelHeader, rows, totalRows, currentPage, totalPages, onPageChange, showAll, onToggleAll }) {
+  const count = totalRows ?? rows.length;
   return (
     <div style={tableCardStyle}>
       <div style={tableHeaderStyle}>
         <h2 style={sectionTitleStyle}>{title}</h2>
-        <span style={rowCountStyle}>{rows.length} ligne{rows.length > 1 ? "s" : ""}</span>
+        <span style={rowCountStyle}>{count} ligne{count > 1 ? "s" : ""}</span>
       </div>
       <div style={{ overflowX: "auto" }}>
         <table style={tableStyle}>
@@ -771,6 +792,45 @@ function SummaryTable({ title, labelHeader, rows }) {
           </tbody>
         </table>
       </div>
+      {totalPages > 1 && (
+        <Pagination current={currentPage} total={totalPages} onChange={onPageChange} count={count} showAll={showAll} onToggleAll={onToggleAll} />
+      )}
+    </div>
+  );
+}
+
+function Pagination({ current, total, onChange, count, showAll, onToggleAll }) {
+  const pages = [];
+  for (let i = 1; i <= total; i++) {
+    if (i === 1 || i === total || (i >= current - 2 && i <= current + 2)) {
+      pages.push(i);
+    } else if (pages[pages.length - 1] !== "...") {
+      pages.push("...");
+    }
+  }
+  return (
+    <div style={paginationStyle}>
+      <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+        <span style={paginationInfoStyle}>
+          {showAll ? `Toutes les ${count} lignes affichées` : `Page ${current} / ${total} · ${count} ligne${count > 1 ? "s" : ""}`}
+        </span>
+        <button onClick={onToggleAll} style={toggleAllBtnStyle}>
+          {showAll ? "⊟ Paginer" : "⊞ Tout afficher"}
+        </button>
+      </div>
+      {!showAll && (
+        <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
+          <button onClick={() => onChange(current - 1)} disabled={current === 1} style={current === 1 ? pageNavDisabledStyle : pageNavStyle}>← Préc.</button>
+          {pages.map((p, i) =>
+            p === "..." ? (
+              <span key={`dots-${i}`} style={{ padding: "0 4px", color: "#9ca3af", fontSize: "13px" }}>…</span>
+            ) : (
+              <button key={p} onClick={() => onChange(p)} style={p === current ? pageActiveBtnStyle : pageBtnStyle}>{p}</button>
+            )
+          )}
+          <button onClick={() => onChange(current + 1)} disabled={current === total} style={current === total ? pageNavDisabledStyle : pageNavStyle}>Suiv. →</button>
+        </div>
+      )}
     </div>
   );
 }
@@ -885,3 +945,10 @@ const bmBadgeStyle = { display: "inline-block", padding: "2px 8px", borderRadius
 const alertBadgeStyle = { display: "inline-block", padding: "2px 8px", borderRadius: "20px", background: "#fee2e2", color: "#991b1b", fontSize: "11px", fontWeight: 600, whiteSpace: "nowrap" };
 const okBadgeStyle = { display: "inline-block", padding: "2px 8px", borderRadius: "20px", background: "#dcfce7", color: "#166534", fontSize: "11px", fontWeight: 600 };
 const spinnerStyle = { width: "48px", height: "48px", border: "4px solid #e5e7eb", borderTop: "4px solid #4f46e5", borderRadius: "50%", margin: "0 auto", animation: "spin 1s linear infinite" };
+const toggleAllBtnStyle = { padding: "4px 10px", borderRadius: "6px", border: "1px solid #e5e7eb", background: "white", color: "#6366f1", fontSize: "12px", fontWeight: 600, cursor: "pointer" };
+const paginationStyle = { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px", borderTop: "1px solid #f3f4f6", flexWrap: "wrap", gap: "10px" };
+const paginationInfoStyle = { fontSize: "13px", color: "#9ca3af" };
+const pageBtnStyle = { width: "34px", height: "34px", borderRadius: "8px", border: "1px solid #e5e7eb", background: "white", color: "#374151", fontSize: "13px", cursor: "pointer", fontWeight: 500 };
+const pageActiveBtnStyle = { ...pageBtnStyle, background: "#111827", color: "white", border: "1px solid #111827" };
+const pageNavStyle = { padding: "0 12px", height: "34px", borderRadius: "8px", border: "1px solid #e5e7eb", background: "white", color: "#374151", fontSize: "13px", cursor: "pointer", fontWeight: 500 };
+const pageNavDisabledStyle = { ...pageNavStyle, color: "#d1d5db", cursor: "not-allowed" };
