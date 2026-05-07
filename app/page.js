@@ -128,6 +128,11 @@ export default function Home() {
   const PAGE_SIZE = 20;
   const [showAll, setShowAll] = useState(false);
   const [globalPage, setGlobalPage] = useState(1);
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [lastRefresh, setLastRefresh] = useState(null);
+  const [nextRefreshIn, setNextRefreshIn] = useState(null);
+  const autoRefreshRef = useRef(null);
+  const countdownRef = useRef(null);
   const [clientPage, setClientPage] = useState(1);
   const [campaignPage, setCampaignPage] = useState(1);
 
@@ -156,6 +161,38 @@ export default function Home() {
     if (!metaUserId) return;
     loadUserData(metaUserId);
   }, [metaUserId]);
+
+  // Auto-refresh toutes les heures
+  useEffect(() => {
+    if (!token || !autoRefresh) {
+      clearInterval(autoRefreshRef.current);
+      clearInterval(countdownRef.current);
+      setNextRefreshIn(null);
+      return;
+    }
+
+    const INTERVAL_MS = 60 * 60 * 1000; // 1 heure
+    let remaining = INTERVAL_MS;
+
+    autoRefreshRef.current = setInterval(() => {
+      loadData();
+      setLastRefresh(new Date());
+      remaining = INTERVAL_MS;
+    }, INTERVAL_MS);
+
+    countdownRef.current = setInterval(() => {
+      remaining -= 60000;
+      const mins = Math.max(0, Math.round(remaining / 60000));
+      setNextRefreshIn(mins);
+    }, 60000);
+
+    setNextRefreshIn(60);
+
+    return () => {
+      clearInterval(autoRefreshRef.current);
+      clearInterval(countdownRef.current);
+    };
+  }, [token, autoRefresh]);
 
   function loadUserData(userId) {
     const OLD_MARGINS_KEY = "meta-dashboard-margin-fields-v1";
@@ -443,6 +480,7 @@ export default function Home() {
   const alertRows = filteredRows.filter((r) => r.alertCount > 0);
   const clientRows = groupBy(filteredRows, "client");
   const campaignRows = groupBy(filteredRows, "campaignName");
+  const bmRows = groupByBm(filteredRows);
   const chartData = buildChartData(filteredRows, chartMode);
 
   // Pagination
@@ -526,7 +564,7 @@ export default function Home() {
           <button onClick={() => setSidebarOpen(false)} style={iconButtonStyle}>✕</button>
         </div>
         <nav style={navStyle}>
-          {[["global", "📊", "Vue globale"], ["client", "👤", "Par client"], ["campaign", "📢", "Par campagne"], ["charts", "📈", "Graphiques"]].map(([v, icon, label]) => (
+          {[["global", "📊", "Vue globale"], ["bm", "🏢", "Par BM"], ["client", "👤", "Par client"], ["campaign", "📢", "Par campagne"], ["charts", "📈", "Graphiques"]].map(([v, icon, label]) => (
             <button key={v} onClick={() => { setActiveView(v); setSidebarOpen(false); }} style={activeView === v ? activeNavStyle : navItemStyle}>
               <span style={{ marginRight: "10px" }}>{icon}</span>{label}
             </button>
@@ -556,11 +594,19 @@ export default function Home() {
             <span style={{ fontSize: "18px", fontWeight: 700, color: "#111827", letterSpacing: "-0.5px" }}>MetaBoard</span>
           </div>
           <div style={{ display: "flex", gap: "6px", flex: 1, justifyContent: "center", flexWrap: "wrap" }}>
-            {[["global", "Vue globale"], ["client", "Par client"], ["campaign", "Par campagne"], ["charts", "Graphiques"]].map(([v, label]) => (
+            {[["global", "Vue globale"], ["bm", "Par BM"], ["client", "Par client"], ["campaign", "Par campagne"], ["charts", "Graphiques"]].map(([v, label]) => (
               <button key={v} onClick={() => setActiveView(v)} style={activeView === v ? activeTabStyle : tabStyle}>{label}</button>
             ))}
           </div>
-          <div style={{ minWidth: "160px", display: "flex", justifyContent: "flex-end" }}>
+          <div style={{ minWidth: "220px", display: "flex", justifyContent: "flex-end", alignItems: "center", gap: "10px" }}>
+            <button
+              onClick={() => setAutoRefresh(!autoRefresh)}
+              title={autoRefresh ? `Prochain refresh dans ${nextRefreshIn ?? "…"} min` : "Auto-refresh désactivé"}
+              style={{ ...autoRefreshBtnStyle, background: autoRefresh ? "#f0fdf4" : "#f9fafb", borderColor: autoRefresh ? "#86efac" : "#e5e7eb", color: autoRefresh ? "#166534" : "#9ca3af" }}
+            >
+              <span style={{ fontSize: "10px" }}>{autoRefresh ? "●" : "○"}</span>
+              {autoRefresh ? `Refresh ${nextRefreshIn ?? "…"}min` : "Auto-refresh off"}
+            </button>
             <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "6px 12px", borderRadius: "20px", background: "#f3f4f6", border: "1px solid #e5e7eb" }}>
               <div style={{ width: "24px", height: "24px", borderRadius: "50%", background: "#6366f1", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "11px", fontWeight: 700 }}>{metaUserName?.[0]?.toUpperCase() || "M"}</div>
               <span style={{ fontSize: "13px", fontWeight: 500, color: "#374151" }}>{metaUserName || "Connecté"}</span>
@@ -689,6 +735,8 @@ export default function Home() {
               )}
             </div>
           )}
+
+          {activeView === "bm" && <BmTable rows={bmRows} />}
 
           {activeView === "client" && <SummaryTable title="Performance par client" labelHeader="Client" rows={paginatedClientRows} totalRows={clientRows.length} currentPage={clientPage} totalPages={totalClientPages} onPageChange={setClientPage} showAll={showAll} onToggleAll={() => { setShowAll(!showAll); setClientPage(1); }} />}
           {activeView === "campaign" && <SummaryTable title="Performance par campagne" labelHeader="Campagne" rows={paginatedCampaignRows} totalRows={campaignRows.length} currentPage={campaignPage} totalPages={totalCampaignPages} onPageChange={setCampaignPage} showAll={showAll} onToggleAll={() => { setShowAll(!showAll); setCampaignPage(1); }} />}
@@ -835,6 +883,68 @@ function Pagination({ current, total, onChange, count, showAll, onToggleAll }) {
   );
 }
 
+function BmTable({ rows }) {
+  const [expanded, setExpanded] = useState({});
+  const toggle = (label) => setExpanded((prev) => ({ ...prev, [label]: !prev[label] }));
+  if (!rows.length) return (
+    <div style={tableCardStyle}>
+      <div style={tableHeaderStyle}><h2 style={sectionTitleStyle}>Performance par BM</h2></div>
+      <div style={{ padding: "40px", textAlign: "center", color: "#9ca3af", fontSize: "14px" }}>Aucune donnée disponible.</div>
+    </div>
+  );
+  return (
+    <div style={tableCardStyle}>
+      <div style={tableHeaderStyle}>
+        <h2 style={sectionTitleStyle}>Performance par BM</h2>
+        <span style={rowCountStyle}>{rows.length} BM</span>
+      </div>
+      <div style={{ overflowX: "auto" }}>
+        <table style={tableStyle}>
+          <thead><tr style={{ background: "#f9fafb" }}>
+            {["BM / Compte pub", "Dépenses", "Leads Meta", "Leads validés", "CA", "Marge", "Marge %", "ROAS", "Coût / lead", "Alertes"].map((h) => <th key={h} style={thStyle}>{h}</th>)}
+          </tr></thead>
+          <tbody>
+            {rows.map((bm) => (
+              <>
+                <tr key={bm.label} style={{ background: "#f0f4ff", cursor: "pointer" }} onClick={() => toggle(bm.label)}>
+                  <td style={{ ...tdStyle, fontWeight: 700 }}>
+                    <span style={{ marginRight: "8px", fontSize: "11px", color: "#6366f1" }}>{expanded[bm.label] ? "▼" : "▶"}</span>
+                    <span style={bmBadgeStyle}>{bm.label}</span>
+                    <span style={{ marginLeft: "8px", fontSize: "11px", color: "#9ca3af" }}>{bm.accounts.length} compte{bm.accounts.length > 1 ? "s" : ""}</span>
+                  </td>
+                  <td style={{ ...tdStyle, fontWeight: 700 }}>{formatMoney(bm.spend)}</td>
+                  <td style={{ ...tdStyle, fontWeight: 700 }}>{formatNumber(bm.leads)}</td>
+                  <td style={{ ...tdStyle, fontWeight: 700 }}>{formatNumber(bm.validatedLeads)}</td>
+                  <td style={{ ...tdStyle, color: "#10b981", fontWeight: 700 }}>{formatMoney(bm.revenue)}</td>
+                  <td style={{ ...tdStyle, color: bm.margin < 0 ? "#ef4444" : "#10b981", fontWeight: 700 }}>{formatMoney(bm.margin)}</td>
+                  <td style={{ ...tdStyle, color: bm.marginRate < 0 ? "#ef4444" : "#374151", fontWeight: 700 }}>{formatPercent(bm.marginRate)}</td>
+                  <td style={{ ...tdStyle, fontWeight: 700 }}><span style={{ color: asNumber(bm.roas) >= 3 ? "#10b981" : asNumber(bm.roas) >= 1 ? "#f59e0b" : "#ef4444", fontWeight: 700 }}>{formatRatio(bm.roas)}</span></td>
+                  <td style={{ ...tdStyle, fontWeight: 700 }}>{formatMoney(bm.realCostPerLead)}</td>
+                  <td style={tdStyle}><span style={bm.alertCount > 0 ? alertBadgeStyle : okBadgeStyle}>{formatNumber(bm.alertCount)}</span></td>
+                </tr>
+                {expanded[bm.label] && bm.accounts.map((acc) => (
+                  <tr key={`${bm.label}-${acc.label}`} style={{ background: "white" }}>
+                    <td style={{ ...tdStyle, paddingLeft: "36px", color: "#6b7280", fontSize: "12px" }}>↳ {acc.label}</td>
+                    <td style={tdStyle}>{formatMoney(acc.spend)}</td>
+                    <td style={tdStyle}>{formatNumber(acc.leads)}</td>
+                    <td style={tdStyle}>{formatNumber(acc.validatedLeads)}</td>
+                    <td style={{ ...tdStyle, color: "#10b981" }}>{formatMoney(acc.revenue)}</td>
+                    <td style={{ ...tdStyle, color: acc.margin < 0 ? "#ef4444" : "#10b981" }}>{formatMoney(acc.margin)}</td>
+                    <td style={{ ...tdStyle, color: acc.marginRate < 0 ? "#ef4444" : "#374151" }}>{formatPercent(acc.marginRate)}</td>
+                    <td style={tdStyle}><span style={{ color: asNumber(acc.roas) >= 3 ? "#10b981" : asNumber(acc.roas) >= 1 ? "#f59e0b" : "#ef4444" }}>{formatRatio(acc.roas)}</span></td>
+                    <td style={tdStyle}>{formatMoney(acc.realCostPerLead)}</td>
+                    <td style={tdStyle}><span style={acc.alertCount > 0 ? alertBadgeStyle : okBadgeStyle}>{formatNumber(acc.alertCount)}</span></td>
+                  </tr>
+                ))}
+              </>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function AlertBadges({ alerts }) {
   if (!alerts.length) return <span style={okBadgeStyle}>OK</span>;
   return <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", minWidth: "150px" }}>{alerts.map((a) => <span key={a} style={alertBadgeStyle}>{a}</span>)}</div>;
@@ -858,6 +968,22 @@ function asNumber(v) { const n = Number.parseFloat(v || 0); return Number.isFini
 function getProfitAlerts(row) { const a = []; if (row.margin < 0) a.push("Marge négative"); if (row.spend > 0 && row.roas < 1) a.push("ROAS < 1"); if (row.clientCpl > 0 && row.realCostPerLead > row.clientCpl) a.push("Coût réel > CPL"); if (row.leads > 0 && row.validatedLeads === 0) a.push("0 lead validé"); return a; }
 function summarize(items) { const t = items.reduce((a, r) => { a.spend += r.spend; a.leads += r.leads; a.validatedLeads += r.validatedLeads; a.revenue += r.revenue; a.margin += r.margin; a.alertCount += r.alertCount || 0; return a; }, { spend: 0, leads: 0, validatedLeads: 0, revenue: 0, margin: 0, alertCount: 0 }); t.roas = t.spend > 0 ? t.revenue / t.spend : 0; t.marginRate = t.revenue > 0 ? t.margin / t.revenue : 0; t.realCostPerLead = t.validatedLeads > 0 ? t.spend / t.validatedLeads : 0; return t; }
 function groupBy(items, key) { const g = items.reduce((a, r) => { const l = r[key] || "Non renseigné"; a[l] = a[l] || []; a[l].push(r); return a; }, {}); return Object.entries(g).map(([l, rows]) => ({ label: l, ...summarize(rows) })).sort((a, b) => b.margin - a.margin); }
+function groupByBm(items) {
+  const bms = {};
+  items.forEach((r) => {
+    const bm = r.businessName || "Sans BM";
+    const acc = r.accountName || "Sans compte";
+    if (!bms[bm]) bms[bm] = { label: bm, accounts: {}, rows: [] };
+    bms[bm].rows.push(r);
+    if (!bms[bm].accounts[acc]) bms[bm].accounts[acc] = [];
+    bms[bm].accounts[acc].push(r);
+  });
+  return Object.values(bms).map((bm) => ({
+    ...bm,
+    ...summarize(bm.rows),
+    accounts: Object.entries(bm.accounts).map(([name, rows]) => ({ label: name, ...summarize(rows) })).sort((a, b) => b.spend - a.spend),
+  })).sort((a, b) => b.spend - a.spend);
+}
 function buildChartData(items, mode) { const g = items.reduce((a, r) => { const d = groupDate(r.date, mode); a[d] = a[d] || { date: d, spend: 0, revenue: 0, margin: 0, leads: 0, validatedLeads: 0 }; a[d].spend += r.spend; a[d].revenue += r.revenue; a[d].margin += r.margin; a[d].leads += r.leads; a[d].validatedLeads += r.validatedLeads; return a; }, {}); return Object.values(g).map((d) => ({ ...d, roas: d.spend > 0 ? d.revenue / d.spend : 0 })).sort((a, b) => new Date(a.date) - new Date(b.date)); }
 function groupDate(date, mode) { if (!date) return "Sans date"; const p = new Date(date); if (mode === "month") return date.slice(0, 7); if (mode === "week") { const d = new Date(p); d.setDate(p.getDate() - p.getDay() + 1); return d.toISOString().slice(0, 10); } return date; }
 function formatMoney(v) { return `${asNumber(v).toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`; }
@@ -945,6 +1071,7 @@ const bmBadgeStyle = { display: "inline-block", padding: "2px 8px", borderRadius
 const alertBadgeStyle = { display: "inline-block", padding: "2px 8px", borderRadius: "20px", background: "#fee2e2", color: "#991b1b", fontSize: "11px", fontWeight: 600, whiteSpace: "nowrap" };
 const okBadgeStyle = { display: "inline-block", padding: "2px 8px", borderRadius: "20px", background: "#dcfce7", color: "#166534", fontSize: "11px", fontWeight: 600 };
 const spinnerStyle = { width: "48px", height: "48px", border: "4px solid #e5e7eb", borderTop: "4px solid #4f46e5", borderRadius: "50%", margin: "0 auto", animation: "spin 1s linear infinite" };
+const autoRefreshBtnStyle = { display: "flex", alignItems: "center", gap: "6px", padding: "5px 10px", borderRadius: "20px", border: "1px solid", fontSize: "12px", fontWeight: 500, cursor: "pointer", background: "none" };
 const toggleAllBtnStyle = { padding: "4px 10px", borderRadius: "6px", border: "1px solid #e5e7eb", background: "white", color: "#6366f1", fontSize: "12px", fontWeight: 600, cursor: "pointer" };
 const paginationStyle = { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px", borderTop: "1px solid #f3f4f6", flexWrap: "wrap", gap: "10px" };
 const paginationInfoStyle = { fontSize: "13px", color: "#9ca3af" };
