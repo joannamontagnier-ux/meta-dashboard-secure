@@ -1,0 +1,22 @@
+{
+  "Compte Meta - Demo Paris__Lead Gen - Paris - Audit solaire__2026-05-01": {
+    "client": "Myoptin",
+    "clientCpl": 23,
+    "validatedLeads": 190
+  },
+  "Compte Meta - Demo Lyon__Conversion - Lyon - Devis isolation__2026-05-02": {
+    "client": "Maison Reno",
+    "clientCpl": 55,
+    "validatedLeads": 39
+  },
+  "Compte Meta - Demo Bordeaux__Lead Gen - Bordeaux - Patrimoine__2026-05-03": {
+    "client": "Atlas Finance",
+    "clientCpl": 38,
+    "validatedLeads": 26
+  },
+  "Compte Meta - Demo Paris__Retargeting - Paris - Audit solaire__2026-05-04": {
+    "client": "Helio Conseil",
+    "clientCpl": 42,
+    "validatedLeads": 17
+  }
+}
