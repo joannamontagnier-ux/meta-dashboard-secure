@@ -9,14 +9,89 @@ import {
 const isDevelopment = process.env.NODE_ENV !== "production";
 
 const demoRows = [
-  { accountName: "Compte Meta - Demo Paris", campaignName: "Lead Gen - Paris - Audit solaire", spend: 1240.5, leads: 86, date: "2026-05-01" },
-  { accountName: "Compte Meta - Demo Lyon", campaignName: "Conversion - Lyon - Devis isolation", spend: 890, leads: 58, date: "2026-05-02" },
-  { accountName: "Compte Meta - Demo Bordeaux", campaignName: "Lead Gen - Bordeaux - Patrimoine", spend: 530.2, leads: 44, date: "2026-05-03" },
-  { accountName: "Compte Meta - Demo Paris", campaignName: "Retargeting - Paris - Audit solaire", spend: 312.7, leads: 21, date: "2026-05-04" },
+  { businessName: "BM Helio", accountName: "Compte Meta - Demo Paris", campaignName: "Lead Gen - Paris - Audit solaire", spend: 1240.5, leads: 86, date: "2026-05-01" },
+  { businessName: "BM Helio", accountName: "Compte Meta - Demo Lyon", campaignName: "Conversion - Lyon - Devis isolation", spend: 890, leads: 58, date: "2026-05-02" },
+  { businessName: "BM Reno", accountName: "Compte Meta - Demo Bordeaux", campaignName: "Lead Gen - Bordeaux - Patrimoine", spend: 530.2, leads: 44, date: "2026-05-03" },
+  { businessName: "BM Reno", accountName: "Compte Meta - Demo Paris", campaignName: "Retargeting - Paris - Audit solaire", spend: 312.7, leads: 21, date: "2026-05-04" },
 ];
 
 function getStorageKey(userId, type) {
   return `meta-dashboard-${type}-${userId}`;
+}
+
+// Composant filtre multi-sélection avec dropdown checkboxes
+function MultiSelect({ label, options, selected, onChange, placeholder }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    function handleClick(e) {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  const toggle = (value) => {
+    if (selected.includes(value)) onChange(selected.filter((v) => v !== value));
+    else onChange([...selected, value]);
+  };
+
+  const count = selected.length;
+
+  return (
+    <div ref={ref} style={{ position: "relative", flex: 1, minWidth: "140px" }}>
+      <label style={filterLabelStyle}>{label}</label>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        style={{
+          ...filterInputStyle,
+          width: "100%",
+          textAlign: "left",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          cursor: "pointer",
+          background: count > 0 ? "#eef2ff" : "white",
+          borderColor: count > 0 ? "#6366f1" : "#e5e7eb",
+          color: count > 0 ? "#4338ca" : "#6b7280",
+        }}
+      >
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: "13px" }}>
+          {count === 0 ? placeholder : count === 1 ? selected[0] : `${count} sélectionnés`}
+        </span>
+        <span style={{ marginLeft: "6px", fontSize: "10px", flexShrink: 0 }}>{open ? "▲" : "▼"}</span>
+      </button>
+      {open && (
+        <div style={dropdownStyle}>
+          {count > 0 && (
+            <button
+              type="button"
+              onClick={() => onChange([])}
+              style={clearBtnStyle}
+            >
+              ✕ Effacer la sélection
+            </button>
+          )}
+          {options.length === 0 && (
+            <div style={{ padding: "10px 12px", fontSize: "12px", color: "#9ca3af" }}>Aucune option</div>
+          )}
+          {options.map((opt) => (
+            <label key={opt} style={dropdownItemStyle}>
+              <input
+                type="checkbox"
+                checked={selected.includes(opt)}
+                onChange={() => toggle(opt)}
+                style={{ marginRight: "8px", accentColor: "#6366f1" }}
+              />
+              <span style={{ fontSize: "13px", color: "#111827", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{opt}</span>
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function Home() {
@@ -34,8 +109,13 @@ export default function Home() {
   const [searchText, setSearchText] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const [bmFilter, setBmFilter] = useState("");
-  const [clientFilter, setClientFilter] = useState("");
+
+  // Filtres multi-sélection
+  const [bmFilter, setBmFilter] = useState([]);
+  const [accountFilter, setAccountFilter] = useState([]);
+  const [campaignFilter, setCampaignFilter] = useState([]);
+  const [clientFilter, setClientFilter] = useState([]);
+
   const [chartMode, setChartMode] = useState("day");
   const [activeView, setActiveView] = useState("global");
   const [chartMetric, setChartMetric] = useState("spend");
@@ -71,7 +151,6 @@ export default function Home() {
   }, [metaUserId]);
 
   function loadUserData(userId) {
-    // Migration : récupère les anciennes données si les nouvelles clés sont vides
     const OLD_MARGINS_KEY = "meta-dashboard-margin-fields-v1";
     const OLD_ROWS_KEY = "meta-dashboard-campaign-rows-v1";
 
@@ -80,15 +159,12 @@ export default function Home() {
       if (savedRows) {
         setRows(JSON.parse(savedRows));
       } else {
-        // Tente de récupérer l'ancienne clé
         const oldRows = window.localStorage.getItem(OLD_ROWS_KEY);
         if (oldRows) {
           const parsed = JSON.parse(oldRows);
           setRows(parsed);
           window.localStorage.setItem(getStorageKey(userId, "rows"), oldRows);
-        } else {
-          setRows([]);
-        }
+        } else { setRows([]); }
       }
     } catch { setRows([]); }
 
@@ -97,20 +173,16 @@ export default function Home() {
       if (savedMargins) {
         setMarginFields(JSON.parse(savedMargins));
       } else {
-        // Tente de récupérer l'ancienne clé
         const oldMargins = window.localStorage.getItem(OLD_MARGINS_KEY);
         if (oldMargins) {
           const parsed = JSON.parse(oldMargins);
           setMarginFields(parsed);
           window.localStorage.setItem(getStorageKey(userId, "margins"), oldMargins);
-          // Migre aussi vers Supabase
           fetch("/api/margins", {
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ margins: parsed, userId }),
           }).catch(console.log);
-        } else {
-          setMarginFields({});
-        }
+        } else { setMarginFields({}); }
       }
     } catch { setMarginFields({}); }
 
@@ -127,8 +199,7 @@ export default function Home() {
   }
 
   function handleFbAuth(authResponse) {
-    const accessToken = authResponse.accessToken;
-    setToken(accessToken);
+    setToken(authResponse.accessToken);
     FB.api("/me", { fields: "id,name" }, (response) => {
       setMetaUserId(response.id);
       setMetaUserName(response.name);
@@ -208,7 +279,11 @@ export default function Home() {
 
   function addManualRow() {
     const today = new Date().toISOString().slice(0, 10);
-    saveCampaignRows(mergeCampaignRows(rows, [{ accountName: "Ligne manuelle", campaignName: `Campagne manuelle ${rows.length + 1}`, spend: 0, leads: 0, date: startDate || today, isManual: true }]));
+    saveCampaignRows(mergeCampaignRows(rows, [{
+      businessName: "Sans BM", accountName: "Ligne manuelle",
+      campaignName: `Campagne manuelle ${rows.length + 1}`,
+      spend: 0, leads: 0, date: startDate || today, isManual: true,
+    }]));
     setActiveView("global");
     setLoadStatus("Ligne manuelle ajoutée.");
   }
@@ -229,9 +304,9 @@ export default function Home() {
 
   function deleteManualRow(row) {
     const key = rowKey(row);
-    const nextRows = rows.filter((item) => rowKey(item) !== key);
     const nf = { ...marginFields }; delete nf[key];
-    saveCampaignRows(nextRows); setMarginFields(nf); saveMargins(nf);
+    saveCampaignRows(rows.filter((item) => rowKey(item) !== key));
+    setMarginFields(nf); saveMargins(nf);
     setLoadStatus("Ligne manuelle supprimée.");
   }
 
@@ -283,29 +358,64 @@ export default function Home() {
     return { ...row, spend, leads, client, clientCpl, validatedLeads, revenue, margin, marginRate: revenue > 0 ? margin / revenue : 0, roas, realCostPerLead, alerts, alertCount: alerts.length };
   }), [rows, marginFields]);
 
+  // Options de filtre — compte pub filtrée selon BM sélectionnés
+  const uniqueBms = useMemo(() => [...new Set(rows.map((r) => r.businessName).filter(Boolean))].sort(), [rows]);
+  const uniqueAccounts = useMemo(() => {
+    const filtered = bmFilter.length > 0 ? rows.filter((r) => bmFilter.includes(r.businessName)) : rows;
+    return [...new Set(filtered.map((r) => r.accountName).filter(Boolean))].sort();
+  }, [rows, bmFilter]);
+  const uniqueCampaigns = useMemo(() => {
+    const filtered = rows.filter((r) =>
+      (bmFilter.length === 0 || bmFilter.includes(r.businessName)) &&
+      (accountFilter.length === 0 || accountFilter.includes(r.accountName))
+    );
+    return [...new Set(filtered.map((r) => r.campaignName).filter(Boolean))].sort();
+  }, [rows, bmFilter, accountFilter]);
+  const uniqueClients = useMemo(() => [...new Set(enrichedRows.map((r) => r.client).filter(Boolean))].sort(), [enrichedRows]);
+
+  // Quand on change le BM, on réinitialise les filtres enfants si nécessaire
+  function handleBmChange(newBm) {
+    setBmFilter(newBm);
+    // Retire les comptes qui n'appartiennent plus aux BM sélectionnés
+    if (newBm.length > 0) {
+      const validAccounts = rows.filter((r) => newBm.includes(r.businessName)).map((r) => r.accountName);
+      setAccountFilter((prev) => prev.filter((a) => validAccounts.includes(a)));
+    }
+  }
+
+  function handleAccountChange(newAccount) {
+    setAccountFilter(newAccount);
+    if (newAccount.length > 0) {
+      const validCampaigns = rows.filter((r) => newAccount.includes(r.accountName)).map((r) => r.campaignName);
+      setCampaignFilter((prev) => prev.filter((c) => validCampaigns.includes(c)));
+    }
+  }
+
   const filteredRows = useMemo(() =>
     enrichedRows.filter((row) => {
       const s = searchText.toLowerCase();
-      return (bmFilter ? row.accountName === bmFilter : true) &&
-        (clientFilter ? row.client === clientFilter : true) &&
+      return (bmFilter.length === 0 || bmFilter.includes(row.businessName)) &&
+        (accountFilter.length === 0 || accountFilter.includes(row.accountName)) &&
+        (campaignFilter.length === 0 || campaignFilter.includes(row.campaignName)) &&
+        (clientFilter.length === 0 || clientFilter.includes(row.client)) &&
         (startDate ? row.date >= startDate : true) &&
         (endDate ? row.date <= endDate : true) &&
-        (s === "" || row.accountName.toLowerCase().includes(s) || row.campaignName.toLowerCase().includes(s) || row.client.toLowerCase().includes(s));
+        (s === "" || (row.businessName || "").toLowerCase().includes(s) || row.accountName.toLowerCase().includes(s) || row.campaignName.toLowerCase().includes(s) || row.client.toLowerCase().includes(s));
     }).sort((a, b) => b.spend - a.spend),
-    [enrichedRows, bmFilter, clientFilter, startDate, endDate, searchText]);
+    [enrichedRows, bmFilter, accountFilter, campaignFilter, clientFilter, startDate, endDate, searchText]);
+
+  const activeFilterCount = bmFilter.length + accountFilter.length + campaignFilter.length + clientFilter.length;
 
   const totals = summarize(filteredRows);
   const alertRows = filteredRows.filter((r) => r.alertCount > 0);
-  const uniqueAccounts = [...new Set(rows.map((r) => r.accountName))];
-  const uniqueClients = [...new Set(enrichedRows.map((r) => r.client).filter(Boolean))].sort();
   const clientRows = groupBy(filteredRows, "client");
   const campaignRows = groupBy(filteredRows, "campaignName");
   const chartData = buildChartData(filteredRows, chartMode);
 
   const exportCsv = useCallback(async () => {
     if (!filteredRows.length) { setExportStatus("Aucune ligne à exporter."); return; }
-    const headers = ["Compte", "Campagne", "Date", "Spend Meta", "Leads Meta", "Client", "CPL client", "Leads validés", "CA", "Marge", "Marge %", "ROAS", "Coût réel par lead", "Alertes"];
-    const csv = [headers, ...filteredRows.map((r) => [r.accountName, r.campaignName, r.date, r.spend, r.leads, r.client, r.clientCpl, r.validatedLeads, r.revenue, r.margin, r.marginRate, r.roas, r.realCostPerLead, r.alerts.join(", ")])].map((cells) => cells.map(escapeCsvCell).join(";")).join("\n");
+    const headers = ["BM", "Compte", "Campagne", "Date", "Spend Meta", "Leads Meta", "Client", "CPL client", "Leads validés", "CA", "Marge", "Marge %", "ROAS", "Coût réel par lead", "Alertes"];
+    const csv = [headers, ...filteredRows.map((r) => [r.businessName || "", r.accountName, r.campaignName, r.date, r.spend, r.leads, r.client, r.clientCpl, r.validatedLeads, r.revenue, r.margin, r.marginRate, r.roas, r.realCostPerLead, r.alerts.join(", ")])].map((cells) => cells.map(escapeCsvCell).join(";")).join("\n");
     const url = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8;" }));
     const a = document.createElement("a"); a.href = url; a.download = `meta-marges-${new Date().toISOString().slice(0, 10)}.csv`;
     document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
@@ -418,33 +528,44 @@ export default function Home() {
         </header>
 
         <div style={contentStyle}>
+          {/* Filtres */}
           <div style={filterPanelStyle}>
-            <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", marginBottom: "14px" }}>
-              {[["Du", "date", startDate, (e) => setStartDate(e.target.value)], ["Au", "date", endDate, (e) => setEndDate(e.target.value)]].map(([label, type, value, onChange]) => (
-                <div key={label} style={{ display: "flex", flexDirection: "column", gap: "4px", flex: 1, minWidth: "140px" }}>
-                  <label style={filterLabelStyle}>{label}</label>
-                  <input type={type} value={value} onChange={onChange} style={filterInputStyle} />
-                </div>
-              ))}
-              <div style={{ display: "flex", flexDirection: "column", gap: "4px", flex: 1, minWidth: "140px" }}>
-                <label style={filterLabelStyle}>Compte</label>
-                <select value={bmFilter} onChange={(e) => setBmFilter(e.target.value)} style={filterInputStyle}>
-                  <option value="">Tous</option>
-                  {uniqueAccounts.map((a) => <option key={a}>{a}</option>)}
-                </select>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" }}>
+              <span style={{ fontSize: "13px", fontWeight: 600, color: "#374151" }}>Filtres</span>
+              {activeFilterCount > 0 && (
+                <button
+                  onClick={() => { setBmFilter([]); setAccountFilter([]); setCampaignFilter([]); setClientFilter([]); }}
+                  style={{ fontSize: "12px", color: "#6366f1", background: "none", border: "none", cursor: "pointer", fontWeight: 500 }}
+                >
+                  ✕ Effacer tous les filtres ({activeFilterCount})
+                </button>
+              )}
+            </div>
+
+            {/* Ligne 1 : dates + recherche */}
+            <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", marginBottom: "12px" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "4px", minWidth: "140px" }}>
+                <label style={filterLabelStyle}>Du</label>
+                <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} style={filterInputStyle} />
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: "4px", flex: 1, minWidth: "140px" }}>
-                <label style={filterLabelStyle}>Client</label>
-                <select value={clientFilter} onChange={(e) => setClientFilter(e.target.value)} style={filterInputStyle}>
-                  <option value="">Tous</option>
-                  {uniqueClients.map((c) => <option key={c}>{c}</option>)}
-                </select>
+              <div style={{ display: "flex", flexDirection: "column", gap: "4px", minWidth: "140px" }}>
+                <label style={filterLabelStyle}>Au</label>
+                <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} style={filterInputStyle} />
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: "4px", flex: 2, minWidth: "200px" }}>
                 <label style={filterLabelStyle}>Recherche</label>
-                <input type="text" placeholder="Compte, client, campagne..." value={searchText} onChange={(e) => setSearchText(e.target.value)} style={filterInputStyle} />
+                <input type="text" placeholder="BM, compte, client, campagne..." value={searchText} onChange={(e) => setSearchText(e.target.value)} style={filterInputStyle} />
               </div>
             </div>
+
+            {/* Ligne 2 : filtres multi-sélection en cascade */}
+            <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", marginBottom: "14px" }}>
+              <MultiSelect label="Business Manager" options={uniqueBms} selected={bmFilter} onChange={handleBmChange} placeholder="Tous les BM" />
+              <MultiSelect label="Compte publicitaire" options={uniqueAccounts} selected={accountFilter} onChange={handleAccountChange} placeholder="Tous les comptes" />
+              <MultiSelect label="Campagne" options={uniqueCampaigns} selected={campaignFilter} onChange={setCampaignFilter} placeholder="Toutes les campagnes" />
+              <MultiSelect label="Client" options={uniqueClients} selected={clientFilter} onChange={setClientFilter} placeholder="Tous les clients" />
+            </div>
+
             <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
               <button onClick={loadData} style={primaryActionStyle} disabled={loading}>{loading ? "⏳ Chargement..." : "⬇ Charger les campagnes"}</button>
               <button onClick={addManualRow} style={secondaryActionStyle}>+ Ajouter une ligne</button>
@@ -461,6 +582,7 @@ export default function Home() {
             </div>
           </div>
 
+          {/* KPIs */}
           <div style={kpiGridStyle}>
             {[
               ["💸", "Spend Meta", formatMoney(totals.spend), "#6366f1", false],
@@ -481,6 +603,7 @@ export default function Home() {
             ))}
           </div>
 
+          {/* Vue globale */}
           {activeView === "global" && (
             <div style={tableCardStyle}>
               <div style={tableHeaderStyle}>
@@ -491,15 +614,16 @@ export default function Home() {
                 <div style={{ overflowX: "auto" }}>
                   <table style={tableStyle}>
                     <thead><tr style={{ background: "#f9fafb" }}>
-                      {["Compte", "Campagne", "Date", "Dépenses", "Leads Meta", "Client", "CPL client", "Leads validés", "CA", "Marge", "Marge %", "ROAS", "Coût / lead", "Alertes", "Action"].map((h) => <th key={h} style={thStyle}>{h}</th>)}
+                      {["BM", "Compte", "Campagne", "Date", "Dépenses", "Leads Meta", "Client", "CPL client", "Leads validés", "CA", "Marge", "Marge %", "ROAS", "Coût / lead", "Alertes", "Action"].map((h) => <th key={h} style={thStyle}>{h}</th>)}
                     </tr></thead>
                     <tbody>
                       {filteredRows.length === 0 ? (
-                        <tr><td colSpan="15" style={{ ...tdStyle, textAlign: "center", padding: "40px", color: "#9ca3af" }}>Aucune campagne avec les filtres actuels.</td></tr>
+                        <tr><td colSpan="16" style={{ ...tdStyle, textAlign: "center", padding: "40px", color: "#9ca3af" }}>Aucune campagne avec les filtres actuels.</td></tr>
                       ) : filteredRows.map((row, i) => (
                         <tr key={`${rowKey(row)}-${i}`} style={i % 2 === 0 ? { background: "white" } : { background: "#fafafa" }}>
+                          <td style={tdStyle}><span style={bmBadgeStyle}>{row.businessName || "—"}</span></td>
                           <td style={tdStyle}>{row.isManual ? <input value={row.accountName} onChange={(e) => updateManualRow(row, "accountName", e.target.value)} style={cellInputStyle} /> : <span style={{ fontSize: "12px", color: "#6b7280" }}>{row.accountName}</span>}</td>
-                          <td style={{ ...tdStyle, fontWeight: 600 }}>{row.isManual ? <input value={row.campaignName} onChange={(e) => updateManualRow(row, "campaignName", e.target.value)} style={{ ...cellInputStyle, width: "220px" }} /> : row.campaignName}</td>
+                          <td style={{ ...tdStyle, fontWeight: 600 }}>{row.isManual ? <input value={row.campaignName} onChange={(e) => updateManualRow(row, "campaignName", e.target.value)} style={{ ...cellInputStyle, width: "200px" }} /> : row.campaignName}</td>
                           <td style={tdStyle}>{row.isManual ? <input type="date" value={row.date} onChange={(e) => updateManualRow(row, "date", e.target.value)} style={cellInputStyle} /> : <span style={{ fontSize: "12px", color: "#9ca3af", fontFamily: "monospace" }}>{row.date}</span>}</td>
                           <td style={{ ...tdStyle, fontWeight: 600 }}>{row.isManual ? <input type="number" min="0" step="0.01" value={row.spend || ""} onChange={(e) => updateManualRow(row, "spend", e.target.value)} placeholder="0" style={cellInputStyle} /> : formatMoney(row.spend)}</td>
                           <td style={tdStyle}>{row.isManual ? <input type="number" min="0" step="1" value={row.leads || ""} onChange={(e) => updateManualRow(row, "leads", e.target.value)} placeholder="0" style={cellInputStyle} /> : formatNumber(row.leads)}</td>
@@ -528,30 +652,11 @@ export default function Home() {
           {activeView === "charts" && (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(500px, 1fr))", gap: "20px" }}>
               {[
-                { title: "Évolution dans le temps", controls: true, chart: (
-                  <BarChart data={chartData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                    <XAxis dataKey="date" tick={{ fontSize: 12 }} />
-                    <YAxis tick={{ fontSize: 12 }} />
-                    <Tooltip formatter={(v) => chartMetric === "roas" ? formatRatio(v) : chartMetric.includes("lead") ? formatNumber(v) : formatMoney(v)} />
-                    <Bar dataKey={chartMetric} fill={chartColor[chartMetric]} radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                )},
-                { title: "Spend vs CA vs Marge", chart: (
-                  <LineChart data={chartData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                    <XAxis dataKey="date" tick={{ fontSize: 12 }} />
-                    <YAxis tick={{ fontSize: 12 }} />
-                    <Tooltip formatter={(v) => formatMoney(v)} />
-                    <Legend />
-                    <Line type="monotone" dataKey="spend" stroke="#6366f1" strokeWidth={2} dot={false} name="Spend" />
-                    <Line type="monotone" dataKey="revenue" stroke="#10b981" strokeWidth={2} dot={false} name="CA" />
-                    <Line type="monotone" dataKey="margin" stroke="#f59e0b" strokeWidth={2} dot={false} name="Marge" />
-                  </LineChart>
-                )},
-                { title: "ROAS par client", vertical: true, dataKey: "roas", fill: "#8b5cf6", fmt: formatRatio, rows: clientRows },
-                { title: "Marge par client", vertical: true, dataKey: "margin", fill: "#f59e0b", fmt: formatMoney, rows: clientRows },
-              ].map(({ title, controls, chart, vertical, dataKey, fill, fmt, rows: cRows }) => (
+                { title: "Évolution dans le temps", controls: true, isBar: true },
+                { title: "Spend vs CA vs Marge", isLine: true },
+                { title: "ROAS par client", isVertical: true, dataKey: "roas", fill: "#8b5cf6", fmt: formatRatio, data: clientRows },
+                { title: "Marge par client", isVertical: true, dataKey: "margin", fill: "#f59e0b", fmt: formatMoney, data: clientRows },
+              ].map(({ title, controls, isBar, isLine, isVertical, dataKey, fill, fmt, data }) => (
                 <div key={title} style={{ background: "white", borderRadius: "14px", border: "1px solid #e5e7eb", padding: "20px" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px", flexWrap: "wrap", gap: "10px" }}>
                     <h2 style={sectionTitleStyle}>{title}</h2>
@@ -561,25 +666,42 @@ export default function Home() {
                           {metricOptions.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
                         </select>
                         <select value={chartMode} onChange={(e) => setChartMode(e.target.value)} style={filterInputStyle}>
-                          <option value="day">Jour</option>
-                          <option value="week">Semaine</option>
-                          <option value="month">Mois</option>
+                          <option value="day">Jour</option><option value="week">Semaine</option><option value="month">Mois</option>
                         </select>
                       </div>
                     )}
                   </div>
                   <div style={{ height: "300px" }}>
-                    {chartReady && (vertical ? cRows?.length > 0 : chartData.length > 0) && (
+                    {chartReady && (isVertical ? data?.length > 0 : chartData.length > 0) && (
                       <ResponsiveContainer width="100%" height="100%">
-                        {vertical ? (
-                          <BarChart data={cRows.slice(0, 8)} layout="vertical">
+                        {isVertical ? (
+                          <BarChart data={data.slice(0, 8)} layout="vertical">
                             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                             <XAxis type="number" tick={{ fontSize: 12 }} />
                             <YAxis dataKey="label" type="category" tick={{ fontSize: 11 }} width={120} />
                             <Tooltip formatter={(v) => fmt(v)} />
                             <Bar dataKey={dataKey} fill={fill} radius={[0, 4, 4, 0]} />
                           </BarChart>
-                        ) : chart}
+                        ) : isLine ? (
+                          <LineChart data={chartData}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                            <XAxis dataKey="date" tick={{ fontSize: 12 }} />
+                            <YAxis tick={{ fontSize: 12 }} />
+                            <Tooltip formatter={(v) => formatMoney(v)} />
+                            <Legend />
+                            <Line type="monotone" dataKey="spend" stroke="#6366f1" strokeWidth={2} dot={false} name="Spend" />
+                            <Line type="monotone" dataKey="revenue" stroke="#10b981" strokeWidth={2} dot={false} name="CA" />
+                            <Line type="monotone" dataKey="margin" stroke="#f59e0b" strokeWidth={2} dot={false} name="Marge" />
+                          </LineChart>
+                        ) : (
+                          <BarChart data={chartData}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                            <XAxis dataKey="date" tick={{ fontSize: 12 }} />
+                            <YAxis tick={{ fontSize: 12 }} />
+                            <Tooltip formatter={(v) => chartMetric === "roas" ? formatRatio(v) : chartMetric.includes("lead") ? formatNumber(v) : formatMoney(v)} />
+                            <Bar dataKey={chartMetric} fill={chartColor[chartMetric]} radius={[4, 4, 0, 0]} />
+                          </BarChart>
+                        )}
                       </ResponsiveContainer>
                     )}
                   </div>
@@ -639,7 +761,7 @@ function Loader() {
     <div style={{ padding: "60px", textAlign: "center" }}>
       <div style={spinnerStyle} />
       <div style={{ marginTop: "20px", fontSize: "18px", fontWeight: 600, color: "#111827" }}>Chargement des dépenses Meta...</div>
-      <div style={{ marginTop: "8px", color: "#6b7280", fontSize: "14px" }}>Récupération des comptes, campagnes et leads</div>
+      <div style={{ marginTop: "8px", color: "#6b7280", fontSize: "14px" }}>Récupération des BM, comptes et campagnes</div>
     </div>
   );
 }
@@ -719,6 +841,9 @@ const contentStyle = { padding: "24px", flex: 1 };
 const filterPanelStyle = { background: "white", borderRadius: "14px", padding: "20px", marginBottom: "20px", border: "1px solid #e5e7eb" };
 const filterLabelStyle = { fontSize: "11px", fontWeight: 600, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.04em" };
 const filterInputStyle = { padding: "8px 12px", borderRadius: "8px", border: "1px solid #e5e7eb", fontSize: "13px", color: "#111827", background: "white", outline: "none" };
+const dropdownStyle = { position: "absolute", top: "100%", left: 0, right: 0, background: "white", border: "1px solid #e5e7eb", borderRadius: "10px", boxShadow: "0 8px 24px rgba(0,0,0,.1)", zIndex: 200, maxHeight: "240px", overflowY: "auto", marginTop: "4px" };
+const dropdownItemStyle = { display: "flex", alignItems: "center", padding: "8px 12px", cursor: "pointer", fontSize: "13px", color: "#111827" };
+const clearBtnStyle = { display: "block", width: "100%", padding: "8px 12px", background: "#f3f4f6", border: "none", borderBottom: "1px solid #e5e7eb", fontSize: "12px", color: "#6366f1", fontWeight: 600, cursor: "pointer", textAlign: "left" };
 const primaryActionStyle = { padding: "9px 18px", borderRadius: "9px", background: "#4f46e5", color: "white", border: "none", fontSize: "13px", fontWeight: 600, cursor: "pointer" };
 const secondaryActionStyle = { padding: "9px 14px", borderRadius: "9px", background: "white", color: "#374151", border: "1px solid #e5e7eb", fontSize: "13px", fontWeight: 500, cursor: "pointer" };
 const kpiGridStyle = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "14px", marginBottom: "20px" };
@@ -728,10 +853,11 @@ const tableCardStyle = { background: "white", borderRadius: "14px", border: "1px
 const tableHeaderStyle = { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "18px 20px", borderBottom: "1px solid #f3f4f6" };
 const sectionTitleStyle = { fontSize: "16px", fontWeight: 700, color: "#111827", margin: 0 };
 const rowCountStyle = { fontSize: "13px", color: "#9ca3af", background: "#f3f4f6", padding: "4px 10px", borderRadius: "20px" };
-const tableStyle = { width: "100%", minWidth: "1400px", borderCollapse: "collapse" };
+const tableStyle = { width: "100%", minWidth: "1500px", borderCollapse: "collapse" };
 const thStyle = { padding: "12px 14px", textAlign: "left", fontSize: "12px", fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.04em", borderBottom: "1px solid #f0f0f0", whiteSpace: "nowrap" };
 const tdStyle = { padding: "12px 14px", fontSize: "13px", color: "#374151", verticalAlign: "middle", borderBottom: "1px solid #f3f4f6" };
 const cellInputStyle = { padding: "7px 10px", borderRadius: "7px", border: "1px solid #e5e7eb", fontSize: "13px", color: "#111827", background: "white", width: "120px", outline: "none" };
+const bmBadgeStyle = { display: "inline-block", padding: "2px 8px", borderRadius: "20px", background: "#eef2ff", color: "#4338ca", fontSize: "11px", fontWeight: 600, whiteSpace: "nowrap" };
 const alertBadgeStyle = { display: "inline-block", padding: "2px 8px", borderRadius: "20px", background: "#fee2e2", color: "#991b1b", fontSize: "11px", fontWeight: 600, whiteSpace: "nowrap" };
 const okBadgeStyle = { display: "inline-block", padding: "2px 8px", borderRadius: "20px", background: "#dcfce7", color: "#166534", fontSize: "11px", fontWeight: 600 };
 const spinnerStyle = { width: "48px", height: "48px", border: "4px solid #e5e7eb", borderTop: "4px solid #4f46e5", borderRadius: "50%", margin: "0 auto", animation: "spin 1s linear infinite" };
