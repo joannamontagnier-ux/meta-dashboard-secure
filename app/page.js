@@ -314,13 +314,13 @@ export default function Home() {
     }
   }
 
-  async function loadData() {
+  async function loadData(forceRefresh = false) {
     if (!token) { alert("Connecte-toi à Meta"); return; }
     setLoading(true);
     try {
       const res = await fetch("/api/meta-spend", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accessToken: token, startDate, endDate }),
+        body: JSON.stringify({ accessToken: token, startDate, endDate, userId: metaUserId, forceRefresh }),
       });
       const data = await res.json();
 
@@ -333,7 +333,8 @@ export default function Home() {
       if (data.rows?.length > 0) {
         const nextRows = mergeCampaignRows(rows, data.rows);
         saveCampaignRows(nextRows);
-        setLoadStatus(`${data.rows.length} campagne(s) chargée(s) · ${data.accountList?.length || 0} compte(s) trouvé(s).`);
+        const cacheLabel = data.fromCache ? " · ⚡ depuis le cache" : "";
+        setLoadStatus(`${data.rows.length} campagne(s) chargée(s) · ${data.accountList?.length || 0} compte(s)${cacheLabel}.`);
       } else {
         setLoadStatus(`Aucune dépense sur cette période · ${data.accountList?.length || 0} compte(s) trouvé(s).`);
       }
@@ -619,7 +620,7 @@ export default function Home() {
       <div style={mainStyle}>
         <header style={topbarStyle}>
           <div style={{ display: "flex", alignItems: "center", gap: "12px", minWidth: "140px" }}>
-            <button onClick={() => setSidebarOpen(true)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "22px", color: "rgba(255,255,255,0.7)", padding: "4px 8px" }}>☰</button>
+            <button onClick={() => setSidebarOpen(true)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "22px", color: "#374151", padding: "4px 8px" }}>☰</button>
             <span style={{ fontSize: "18px", fontWeight: 700, color: "#111827", letterSpacing: "-0.5px" }}>MetaBoard</span>
           </div>
           <div style={{ display: "flex", gap: "6px", flex: 1, justifyContent: "center", flexWrap: "wrap" }}>
@@ -631,14 +632,14 @@ export default function Home() {
             <button
               onClick={() => setAutoRefresh(!autoRefresh)}
               title={autoRefresh ? `Prochain refresh dans ${nextRefreshIn ?? "…"} min` : "Auto-refresh désactivé"}
-              style={{ ...autoRefreshBtnStyle, background: autoRefresh ? "rgba(74,222,128,0.12)" : "rgba(255,255,255,0.06)", borderColor: autoRefresh ? "rgba(74,222,128,0.3)" : "rgba(255,255,255,0.1)", color: autoRefresh ? "#4ade80" : "rgba(255,255,255,0.3)" }}
+              style={{ ...autoRefreshBtnStyle, background: autoRefresh ? "#f0fdf4" : "#f9fafb", borderColor: autoRefresh ? "#86efac" : "#e5e7eb", color: autoRefresh ? "#166534" : "#9ca3af" }}
             >
               <span style={{ fontSize: "10px" }}>{autoRefresh ? "●" : "○"}</span>
               {autoRefresh ? `Refresh ${nextRefreshIn ?? "…"}min` : "Auto-refresh off"}
             </button>
             <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "6px 12px", borderRadius: "20px", background: "#f3f4f6", border: "1px solid #e5e7eb" }}>
               <div style={{ width: "24px", height: "24px", borderRadius: "50%", background: "#6366f1", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "11px", fontWeight: 700 }}>{metaUserName?.[0]?.toUpperCase() || "M"}</div>
-              <span style={{ fontSize: "12px", fontWeight: 500, color: "rgba(255,255,255,0.8)" }}>{metaUserName || "Connecté"}</span>
+              <span style={{ fontSize: "13px", fontWeight: 500, color: "#374151" }}>{metaUserName || "Connecté"}</span>
             </div>
           </div>
         </header>
@@ -698,7 +699,8 @@ export default function Home() {
             </div>
 
             <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
-              <button onClick={loadData} style={primaryActionStyle} disabled={loading}>{loading ? "⏳ Chargement..." : "⬇ Charger les campagnes"}</button>
+              <button onClick={() => loadData(false)} style={primaryActionStyle} disabled={loading}>{loading ? "⏳ Chargement..." : "⬇ Charger les campagnes"}</button>
+              <button onClick={() => loadData(true)} style={{ ...secondaryActionStyle, fontSize: "12px" }} disabled={loading} title="Ignorer le cache et recharger depuis Meta">🔄 Forcer</button>
               <button onClick={addManualRow} style={secondaryActionStyle}>+ Ajouter une ligne</button>
               {isDevelopment && <button onClick={loadDemoData} style={secondaryActionStyle}>🎯 Données test</button>}
               <button onClick={() => importInputRef.current?.click()} style={secondaryActionStyle}>📥 Import CSV</button>
@@ -729,7 +731,7 @@ export default function Home() {
               <div key={label} style={{ ...kpiCardStyle, borderTop: `3px solid ${color}` }}>
                 <div style={{ fontSize: "20px", marginBottom: "8px" }}>{icon}</div>
                 <div style={kpiLabelStyle}>{label}</div>
-                <div style={{ fontSize: "26px", fontWeight: 700, color: danger ? "#ef4444" : "#111827", fontFamily: "'Syne', sans-serif", lineHeight: 1 }}>{value}</div>
+                <div style={{ fontSize: "22px", fontWeight: 700, color: danger ? "#ef4444" : "#111827" }}>{value}</div>
               </div>
             ))}
           </div>
@@ -1075,7 +1077,7 @@ const splashSubtitleStyle = { fontSize: "17px", color: "rgba(255,255,255,.5)", l
 const splashFeaturesStyle = { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px", width: "100%" };
 const featureCardStyle = { background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.08)", borderRadius: "14px", padding: "18px 14px", textAlign: "center", transition: "all .2s ease" };
 const splashBtnStyle = { display: "flex", alignItems: "center", gap: "12px", padding: "16px 32px", borderRadius: "14px", background: "#4f46e5", color: "white", border: "none", fontSize: "16px", fontWeight: 600, cursor: "pointer", transition: "all .2s ease", boxShadow: "0 4px 20px rgba(99,102,241,.25)" };
-const appStyle = { display: "flex", minHeight: "100vh", background: "#f4f5f7", fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif" };
+const appStyle = { display: "flex", minHeight: "100vh", background: "#f8fafc", fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif" };
 const sidebarStyle = { position: "fixed", top: 0, left: 0, height: "100vh", width: "260px", background: "#111827", zIndex: 100, display: "flex", flexDirection: "column", transition: "transform .25s ease", boxShadow: "4px 0 24px rgba(0,0,0,.15)" };
 const sidebarHeaderStyle = { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "20px", borderBottom: "1px solid rgba(255,255,255,.08)" };
 const logoTextStyle = { fontSize: "20px", fontWeight: 700, color: "white", letterSpacing: "-0.5px" };
@@ -1088,29 +1090,29 @@ const sidebarFooterStyle = { padding: "16px", borderTop: "1px solid rgba(255,255
 const userCardStyle = { display: "flex", alignItems: "center", gap: "10px", padding: "8px", background: "rgba(255,255,255,.05)", borderRadius: "10px" };
 const overlayStyle = { position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", zIndex: 99 };
 const mainStyle = { flex: 1, display: "flex", flexDirection: "column", minWidth: 0 };
-const topbarStyle = { display: "flex", alignItems: "center", gap: "16px", padding: "0 24px", height: "56px", background: "#0f1117", borderBottom: "none", position: "sticky", top: 0, zIndex: 50 };
-const tabStyle = { padding: "6px 14px", borderRadius: "6px", border: "none", background: "transparent", color: "rgba(255,255,255,0.5)", fontSize: "12px", fontWeight: 500, cursor: "pointer" };
-const activeTabStyle = { ...tabStyle, background: "rgba(255,255,255,0.12)", color: "white" };
+const topbarStyle = { display: "flex", alignItems: "center", gap: "16px", padding: "0 24px", height: "64px", background: "white", borderBottom: "1px solid #e5e7eb", position: "sticky", top: 0, zIndex: 50 };
+const tabStyle = { padding: "7px 16px", borderRadius: "20px", border: "1px solid #e5e7eb", background: "white", color: "#6b7280", fontSize: "13px", fontWeight: 500, cursor: "pointer" };
+const activeTabStyle = { ...tabStyle, background: "#111827", color: "white", border: "1px solid #111827" };
 const contentStyle = { padding: "20px 24px", flex: 1 };
-const filterPanelStyle = { background: "white", borderRadius: "10px", padding: "16px", marginBottom: "14px", border: "1px solid #e9eaec" };
+const filterPanelStyle = { background: "white", borderRadius: "14px", padding: "20px", marginBottom: "20px", border: "1px solid #e5e7eb" };
 const filterLabelStyle = { fontSize: "11px", fontWeight: 600, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.04em" };
 const filterInputStyle = { padding: "8px 12px", borderRadius: "8px", border: "1px solid #e5e7eb", fontSize: "13px", color: "#111827", background: "white", outline: "none" };
 const dropdownStyle = { position: "absolute", top: "100%", left: 0, right: 0, background: "white", border: "1px solid #e5e7eb", borderRadius: "10px", boxShadow: "0 8px 24px rgba(0,0,0,.1)", zIndex: 200, maxHeight: "240px", overflowY: "auto", marginTop: "4px" };
 const dropdownItemStyle = { display: "flex", alignItems: "center", padding: "8px 12px", cursor: "pointer", fontSize: "13px", color: "#111827" };
 const clearBtnStyle = { display: "block", width: "100%", padding: "8px 12px", background: "#f3f4f6", border: "none", borderBottom: "1px solid #e5e7eb", fontSize: "12px", color: "#6366f1", fontWeight: 600, cursor: "pointer", textAlign: "left" };
-const primaryActionStyle = { padding: "8px 16px", borderRadius: "8px", background: "#6366f1", color: "white", border: "none", fontSize: "12px", fontWeight: 600, cursor: "pointer" };
-const secondaryActionStyle = { padding: "8px 12px", borderRadius: "8px", background: "white", color: "#374151", border: "1px solid #e9eaec", fontSize: "12px", fontWeight: 500, cursor: "pointer" };
-const kpiGridStyle = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "10px", marginBottom: "14px" };
-const kpiCardStyle = { background: "white", borderRadius: "10px", padding: "14px 16px", border: "1px solid #e9eaec" };
-const kpiLabelStyle = { fontSize: "10px", color: "#9ca3af", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "6px" };
-const tableCardStyle = { background: "white", borderRadius: "10px", border: "1px solid #e9eaec", marginBottom: "16px", overflow: "hidden" };
+const primaryActionStyle = { padding: "9px 18px", borderRadius: "9px", background: "#4f46e5", color: "white", border: "none", fontSize: "13px", fontWeight: 600, cursor: "pointer" };
+const secondaryActionStyle = { padding: "9px 14px", borderRadius: "9px", background: "white", color: "#374151", border: "1px solid #e5e7eb", fontSize: "13px", fontWeight: 500, cursor: "pointer" };
+const kpiGridStyle = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "14px", marginBottom: "20px" };
+const kpiCardStyle = { background: "white", borderRadius: "12px", padding: "16px 18px", border: "1px solid #e5e7eb" };
+const kpiLabelStyle = { fontSize: "12px", color: "#9ca3af", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: "4px" };
+const tableCardStyle = { background: "white", borderRadius: "14px", border: "1px solid #e5e7eb", marginBottom: "20px", overflow: "hidden" };
 const tableHeaderStyle = { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "18px 20px", borderBottom: "1px solid #f3f4f6" };
-const sectionTitleStyle = { fontSize: "14px", fontWeight: 700, color: "#111827", margin: 0, fontFamily: "'Syne', sans-serif" };
+const sectionTitleStyle = { fontSize: "16px", fontWeight: 700, color: "#111827", margin: 0 };
 const rowCountStyle = { fontSize: "13px", color: "#9ca3af", background: "#f3f4f6", padding: "4px 10px", borderRadius: "20px" };
 const tableStyle = { width: "100%", minWidth: "1500px", borderCollapse: "collapse" };
-const thStyle = { padding: "9px 12px", textAlign: "left", fontSize: "10px", fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em", borderBottom: "1px solid #f0f0f0", whiteSpace: "nowrap", background: "#f8f9fb" };
-const tdStyle = { padding: "11px 12px", fontSize: "12px", color: "#374151", verticalAlign: "middle", borderBottom: "1px solid #f7f8fa" };
-const cellInputStyle = { padding: "5px 8px", borderRadius: "6px", border: "1px solid #e9eaec", fontSize: "11px", color: "#111827", background: "#fafafa", width: "110px", outline: "none", transition: "border-color 0.15s" };
+const thStyle = { padding: "12px 14px", textAlign: "left", fontSize: "12px", fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.04em", borderBottom: "1px solid #f0f0f0", whiteSpace: "nowrap" };
+const tdStyle = { padding: "12px 14px", fontSize: "13px", color: "#374151", verticalAlign: "middle", borderBottom: "1px solid #f3f4f6" };
+const cellInputStyle = { padding: "7px 10px", borderRadius: "7px", border: "1px solid #e5e7eb", fontSize: "13px", color: "#111827", background: "white", width: "120px", outline: "none" };
 const bmBadgeStyle = { display: "inline-block", padding: "2px 8px", borderRadius: "20px", background: "#eef2ff", color: "#4338ca", fontSize: "11px", fontWeight: 600, whiteSpace: "nowrap" };
 const alertBadgeStyle = { display: "inline-block", padding: "2px 8px", borderRadius: "20px", background: "#fee2e2", color: "#991b1b", fontSize: "11px", fontWeight: 600, whiteSpace: "nowrap" };
 const okBadgeStyle = { display: "inline-block", padding: "2px 8px", borderRadius: "20px", background: "#dcfce7", color: "#166534", fontSize: "11px", fontWeight: 600 };
