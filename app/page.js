@@ -141,6 +141,10 @@ export default function Home() {
   const [clientPage, setClientPage] = useState(1);
   const [campaignPage, setCampaignPage] = useState(1);
 
+  const [sortConfig, setSortConfig] = useState({ key: "spend", dir: "desc" });
+  const [clientSortConfig, setClientSortConfig] = useState({ key: "spend", dir: "desc" });
+  const [campaignSortConfig, setCampaignSortConfig] = useState({ key: "spend", dir: "desc" });
+
   const saveRequestRef = useRef(0);
   const importInputRef = useRef(null);
 
@@ -524,8 +528,18 @@ export default function Home() {
         (startDate ? row.date >= startDate : true) &&
         (endDate ? row.date <= endDate : true) &&
         (s === "" || (row.businessName || "").toLowerCase().includes(s) || row.accountName.toLowerCase().includes(s) || row.campaignName.toLowerCase().includes(s) || row.client.toLowerCase().includes(s));
-    }).sort((a, b) => b.spend - a.spend),
-    [enrichedRows, bmFilter, accountFilter, campaignFilter, clientFilter, startDate, endDate, searchText]);
+    }).sort((a, b) => {
+      const { key, dir } = sortConfig;
+      if (key === "date" || key === "campaignName" || key === "accountName" || key === "client") {
+        const valA = String(a[key] || "");
+        const valB = String(b[key] || "");
+        return dir === "desc" ? valB.localeCompare(valA) : valA.localeCompare(valB);
+      }
+      const valA = asNumber(a[key]);
+      const valB = asNumber(b[key]);
+      return dir === "desc" ? valB - valA : valA - valB;
+    }),
+    [enrichedRows, bmFilter, accountFilter, campaignFilter, clientFilter, startDate, endDate, searchText, sortConfig]);
 
   const activeFilterCount = bmFilter.length + accountFilter.length + campaignFilter.length + clientFilter.length;
 
@@ -534,8 +548,23 @@ export default function Home() {
 
   const totals = summarize(filteredRows);
   const alertRows = filteredRows.filter((r) => r.alertCount > 0);
-  const clientRows = groupBy(filteredRows, "client");
-  const campaignRows = groupBy(filteredRows, "campaignName");
+  const clientRows = useMemo(() => {
+    const rows = groupBy(filteredRows, "client");
+    return [...rows].sort((a, b) => {
+      const { key, dir } = clientSortConfig;
+      const valA = asNumber(a[key]); const valB = asNumber(b[key]);
+      return dir === "desc" ? valB - valA : valA - valB;
+    });
+  }, [filteredRows, clientSortConfig]);
+
+  const campaignRows = useMemo(() => {
+    const rows = groupBy(filteredRows, "campaignName");
+    return [...rows].sort((a, b) => {
+      const { key, dir } = campaignSortConfig;
+      const valA = asNumber(a[key]); const valB = asNumber(b[key]);
+      return dir === "desc" ? valB - valA : valA - valB;
+    });
+  }, [filteredRows, campaignSortConfig]);
   const bmRows = groupByBm(filteredRows);
   const chartData = buildChartData(filteredRows, chartMode);
 
@@ -658,7 +687,7 @@ export default function Home() {
             <span style={{ fontSize: "18px", fontWeight: 700, color: "#111827", letterSpacing: "-0.5px" }}>MetaBoard</span>
           </div>
           <div style={{ display: "flex", gap: "6px", flex: 1, justifyContent: "center", flexWrap: "wrap" }}>
-            {[["global", "Vue globale"], ["bm", "Par BM"], ["client", "Par client"], ["campaign", "Par campagne"], ["charts", "Graphiques"], ["lookup", "🔍 ID"]].map(([v, label]) => (
+            {[["global", "Vue globale"], ["bm", "Par BM"], ["client", "Par client"], ["campaign", "Par campagne"], ["charts", "Graphiques"]].map(([v, label]) => (
               <button key={v} onClick={() => setActiveView(v)} style={activeView === v ? activeTabStyle : tabStyle}>{label}</button>
             ))}
           </div>
@@ -734,7 +763,7 @@ export default function Home() {
 
             <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
               <button onClick={() => loadData(false)} style={primaryActionStyle} disabled={loading}>{loading ? "⏳ Chargement..." : "⬇ Charger les campagnes"}</button>
-              <button onClick={() => loadData(true)} style={secondaryActionStyle} disabled={loading} title="Ignorer le cache et recharger depuis Meta">🔄 Forcer</button>
+              <button onClick={() => loadData(true)} style={{ padding: "9px 14px", borderRadius: "9px", background: "#fff7ed", color: "#c2410c", border: "1px solid #fed7aa", fontSize: "13px", fontWeight: 600, cursor: "pointer" }} disabled={loading} title="Ignorer le cache et recharger depuis Meta">🔄 Forcer</button>
               <button onClick={addManualRow} style={secondaryActionStyle}>+ Ajouter une ligne</button>
               {isDevelopment && <button onClick={loadDemoData} style={secondaryActionStyle}>🎯 Données test</button>}
               <button onClick={() => importInputRef.current?.click()} style={secondaryActionStyle}>📥 Import CSV</button>
@@ -781,7 +810,34 @@ export default function Home() {
                 <div style={{ overflowX: "auto" }}>
                   <table style={tableStyle}>
                     <thead><tr style={{ background: "#f9fafb" }}>
-                      {["BM", "Compte", "Campagne", "Date", "Dépenses", "Leads Meta", "Client", "CPL client", "Leads validés", "CA", "Marge", "Marge %", "ROAS", "Coût / lead", "Alertes", "Action"].map((h) => <th key={h} style={thStyle}>{h}</th>)}
+                      {[
+                        { label: "BM", key: null },
+                        { label: "Compte", key: "accountName" },
+                        { label: "Campagne", key: "campaignName" },
+                        { label: "Date", key: "date" },
+                        { label: "Dépenses", key: "spend" },
+                        { label: "Leads Meta", key: "leads" },
+                        { label: "Client", key: "client" },
+                        { label: "CPL client", key: "clientCpl" },
+                        { label: "Leads validés", key: "validatedLeads" },
+                        { label: "CA", key: "revenue" },
+                        { label: "Marge", key: "margin" },
+                        { label: "Marge %", key: "marginRate" },
+                        { label: "ROAS", key: "roas" },
+                        { label: "Coût / lead", key: "realCostPerLead" },
+                        { label: "Alertes", key: "alertCount" },
+                        { label: "Action", key: null },
+                      ].map(({ label, key }) => (
+                        <th key={label} style={{ ...thStyle, cursor: key ? "pointer" : "default", userSelect: "none" }}
+                          onClick={() => key && setSortConfig(prev => ({ key, dir: prev.key === key && prev.dir === "desc" ? "asc" : "desc" }))}
+                        >
+                          {label}
+                          {key && sortConfig.key === key && (
+                            <span style={{ marginLeft: "4px", color: "#6366f1" }}>{sortConfig.dir === "desc" ? "↓" : "↑"}</span>
+                          )}
+                          {key && sortConfig.key !== key && <span style={{ marginLeft: "4px", color: "#d1d5db" }}>↕</span>}
+                        </th>
+                      ))}
                     </tr></thead>
                     <tbody>
                       {filteredRows.length === 0 ? (
@@ -818,8 +874,8 @@ export default function Home() {
 
           {activeView === "bm" && <BmTable rows={bmRows} />}
 
-          {activeView === "client" && <SummaryTable title="Performance par client" labelHeader="Client" rows={paginatedClientRows} totalRows={clientRows.length} currentPage={clientPage} totalPages={totalClientPages} onPageChange={setClientPage} showAll={showAll} onToggleAll={() => { setShowAll(!showAll); setClientPage(1); }} />}
-          {activeView === "campaign" && <SummaryTable title="Performance par campagne" labelHeader="Campagne" rows={paginatedCampaignRows} totalRows={campaignRows.length} currentPage={campaignPage} totalPages={totalCampaignPages} onPageChange={setCampaignPage} showAll={showAll} onToggleAll={() => { setShowAll(!showAll); setCampaignPage(1); }} />}
+          {activeView === "client" && <SummaryTable title="Performance par client" labelHeader="Client" rows={paginatedClientRows} totalRows={clientRows.length} currentPage={clientPage} totalPages={totalClientPages} onPageChange={setClientPage} showAll={showAll} onToggleAll={() => { setShowAll(!showAll); setClientPage(1); }} sortConfig={clientSortConfig} onSort={(key) => setClientSortConfig(prev => ({ key, dir: prev.key === key && prev.dir === "desc" ? "asc" : "desc" }))} />}
+          {activeView === "campaign" && <SummaryTable title="Performance par campagne" labelHeader="Campagne" rows={paginatedCampaignRows} totalRows={campaignRows.length} currentPage={campaignPage} totalPages={totalCampaignPages} onPageChange={setCampaignPage} showAll={showAll} onToggleAll={() => { setShowAll(!showAll); setCampaignPage(1); }} sortConfig={campaignSortConfig} onSort={(key) => setCampaignSortConfig(prev => ({ key, dir: prev.key === key && prev.dir === "desc" ? "asc" : "desc" }))} />}
 
           {activeView === "lookup" && (
             <div style={{ maxWidth: "720px" }}>
@@ -975,8 +1031,20 @@ export default function Home() {
 
 // ─── Composants ──────────────────────────────────────────────────────────────
 
-function SummaryTable({ title, labelHeader, rows, totalRows, currentPage, totalPages, onPageChange, showAll, onToggleAll }) {
+function SummaryTable({ title, labelHeader, rows, totalRows, currentPage, totalPages, onPageChange, showAll, onToggleAll, sortConfig, onSort }) {
   const count = totalRows ?? rows.length;
+  const summaryColumns = [
+    { label: labelHeader, key: null },
+    { label: "Dépenses", key: "spend" },
+    { label: "Leads Meta", key: "leads" },
+    { label: "Leads validés", key: "validatedLeads" },
+    { label: "CA", key: "revenue" },
+    { label: "Marge", key: "margin" },
+    { label: "Marge %", key: "marginRate" },
+    { label: "ROAS", key: "roas" },
+    { label: "Coût / lead", key: "realCostPerLead" },
+    { label: "Alertes", key: "alertCount" },
+  ];
   return (
     <div style={tableCardStyle}>
       <div style={tableHeaderStyle}>
@@ -986,7 +1054,15 @@ function SummaryTable({ title, labelHeader, rows, totalRows, currentPage, totalP
       <div style={{ overflowX: "auto" }}>
         <table style={tableStyle}>
           <thead><tr style={{ background: "#f9fafb" }}>
-            {[labelHeader, "Dépenses", "Leads Meta", "Leads validés", "CA", "Marge", "Marge %", "ROAS", "Coût / lead", "Alertes"].map((h) => <th key={h} style={thStyle}>{h}</th>)}
+            {summaryColumns.map(({ label, key }) => (
+              <th key={label} style={{ ...thStyle, cursor: key ? "pointer" : "default", userSelect: "none" }}
+                onClick={() => key && onSort && onSort(key)}
+              >
+                {label}
+                {key && sortConfig?.key === key && <span style={{ marginLeft: "4px", color: "#6366f1" }}>{sortConfig.dir === "desc" ? "↓" : "↑"}</span>}
+                {key && sortConfig?.key !== key && <span style={{ marginLeft: "4px", color: "#d1d5db" }}>↕</span>}
+              </th>
+            ))}
           </tr></thead>
           <tbody>
             {rows.map((row, i) => (
