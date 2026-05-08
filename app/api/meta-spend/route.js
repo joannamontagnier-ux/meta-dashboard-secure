@@ -7,6 +7,43 @@ function appSecretProof(accessToken) {
     .digest("hex");
 }
 
+function parseMetaError(error) {
+  if (!error) return "Erreur inconnue.";
+  const code = error.code;
+  const subcode = error.error_subcode;
+  const msg = error.message || "";
+
+  // Rate limit
+  if (code === 4 || code === 17 || code === 32 || code === 613) {
+    return "⏱ Limite de requêtes Meta atteinte. Attends quelques minutes et réessaie.";
+  }
+  // Token expiré ou invalide
+  if (code === 190) {
+    if (subcode === 463) return "🔑 Session Meta expirée. Déconnecte-toi et reconnecte-toi.";
+    if (subcode === 460) return "🔑 Mot de passe Meta changé. Reconnecte-toi.";
+    return "🔑 Token Meta invalide ou expiré. Reconnecte-toi à Meta.";
+  }
+  // Permission refusée
+  if (code === 200 || code === 10 || code === 3) {
+    return "🚫 Permission refusée. Vérifie que l'app a accès à 'ads_read' et 'business_management'.";
+  }
+  // Compte inactif ou suspendu
+  if (code === 275 || code === 100 && msg.includes("disabled")) {
+    return "⛔ Ce compte publicitaire est inactif ou suspendu sur Meta.";
+  }
+  // Compte non trouvé
+  if (code === 100) {
+    return "🔍 Compte introuvable. Vérifie que tu as bien accès à ce compte Meta.";
+  }
+  // Accès au compte refusé
+  if (code === 273) {
+    return "🚫 Accès refusé à ce compte publicitaire. Il est peut-être archivé ou tu n'as plus les droits.";
+  }
+  // Erreur générique avec message
+  if (msg) return `❌ Erreur Meta : ${msg}`;
+  return "❌ Erreur Meta inconnue. Réessaie ou reconnecte-toi.";
+}
+
 async function fetchAllPages(url) {
   let results = [];
   let nextUrl = url;
@@ -14,13 +51,23 @@ async function fetchAllPages(url) {
     const response = await fetch(nextUrl);
     const data = await response.json();
     if (data.error) {
+      const friendly = parseMetaError(data.error);
       console.error("Meta API error:", data.error);
-      break;
+      throw new Error(friendly);
     }
     if (data.data) results = results.concat(data.data);
     nextUrl = data.paging?.next || null;
   }
   return results;
+}
+
+async function fetchAllPagesSafe(url) {
+  try {
+    return await fetchAllPages(url);
+  } catch (e) {
+    console.error("fetchAllPagesSafe:", e.message);
+    return [];
+  }
 }
 
 // ── Cache Supabase ────────────────────────────────────────────────────────────
@@ -101,8 +148,8 @@ async function fetchAllAccounts(accessToken, proof) {
     await Promise.all(
       businesses.map(async (bm) => {
         const [owned, clients] = await Promise.all([
-          fetchAllPages(`https://graph.facebook.com/v19.0/${bm.id}/owned_ad_accounts?fields=id,name,account_id,account_status&limit=500&${base}`),
-          fetchAllPages(`https://graph.facebook.com/v19.0/${bm.id}/client_ad_accounts?fields=id,name,account_id,account_status&limit=500&${base}`),
+          fetchAllPagesSafe(`https://graph.facebook.com/v19.0/${bm.id}/owned_ad_accounts?fields=id,name,account_id,account_status&limit=500&${base}`),
+          fetchAllPagesSafe(`https://graph.facebook.com/v19.0/${bm.id}/client_ad_accounts?fields=id,name,account_id,account_status&limit=500&${base}`),
         ]);
 
         [...owned, ...clients].forEach((acc) => {
@@ -152,7 +199,7 @@ async function fetchInsightsForAccounts(accounts, accessToken, proof, startDate,
 
     const batchResults = await Promise.allSettled(
       batch.map(async (account) => {
-        const insights = await fetchAllPages(
+        const insights = await fetchAllPagesSafe(
           `https://graph.facebook.com/v19.0/act_${account.account_id}/insights?fields=campaign_name,spend,date_start,actions&level=campaign&time_increment=1&limit=500&time_range=${timeRange}&${base}`
         );
 
@@ -238,9 +285,15 @@ export async function POST(request) {
       }
     }
 
-    return Response.json({ rows, accountList, fromCache: false });
+    const warnings = [];
+    if (rows.length === 0 && allAccounts.length > 0) {
+      warnings.push("Aucune dépense trouvée sur cette période pour les comptes accessibles.");
+    }
+
+    return Response.json({ rows, accountList, fromCache: false, warnings });
   } catch (error) {
     console.error(error);
-    return Response.json({ error: "Erreur serveur" }, { status: 500 });
+    const message = error.message || "Erreur serveur";
+    return Response.json({ error: message }, { status: 500 });
   }
 }
