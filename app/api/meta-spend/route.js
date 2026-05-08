@@ -7,240 +7,135 @@ function appSecretProof(accessToken) {
     .digest("hex");
 }
 
-async function fetchAllPages(url) {
-  let results = [];
-  let nextUrl = url;
-  while (nextUrl) {
-    const response = await fetch(nextUrl);
-    const data = await response.json();
-    if (data.error) {
-      console.error("Meta API error:", data.error);
-      break;
-    }
-    if (data.data) results = results.concat(data.data);
-    nextUrl = data.paging?.next || null;
-  }
-  return results;
-}
-
-// ── Cache Supabase ────────────────────────────────────────────────────────────
-
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const useSupabase = Boolean(supabaseUrl && supabaseKey);
-const CACHE_TTL_MINUTES = 60;
-
-function supabaseHeaders() {
-  return {
-    apikey: supabaseKey,
-    Authorization: `Bearer ${supabaseKey}`,
-    "Content-Type": "application/json",
-  };
-}
-
-async function getCachedRows(userId, startDate, endDate) {
-  if (!useSupabase || !userId) return null;
-
-  const cacheKey = `${userId}__${startDate}__${endDate}`;
-  const cutoff = new Date(Date.now() - CACHE_TTL_MINUTES * 60 * 1000).toISOString();
-
-  const res = await fetch(
-    `${supabaseUrl}/rest/v1/meta_spend_cache?cache_key=eq.${encodeURIComponent(cacheKey)}&updated_at=gte.${encodeURIComponent(cutoff)}&select=rows_json`,
-    { headers: supabaseHeaders(), cache: "no-store" }
-  );
-  if (!res.ok) return null;
-
+async function fetchMeta(url) {
+  const res = await fetch(url);
   const data = await res.json();
-  if (!data.length) return null;
-
-  try {
-    return JSON.parse(data[0].rows_json);
-  } catch {
-    return null;
-  }
+  if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+  return data;
 }
-
-async function setCachedRows(userId, startDate, endDate, rows) {
-  if (!useSupabase || !userId) return;
-
-  const cacheKey = `${userId}__${startDate}__${endDate}`;
-
-  await fetch(
-    `${supabaseUrl}/rest/v1/meta_spend_cache?on_conflict=cache_key`,
-    {
-      method: "POST",
-      headers: { ...supabaseHeaders(), Prefer: "resolution=merge-duplicates" },
-      body: JSON.stringify({
-        cache_key: cacheKey,
-        user_id: userId,
-        start_date: startDate,
-        end_date: endDate,
-        rows_json: JSON.stringify(rows),
-        updated_at: new Date().toISOString(),
-      }),
-    }
-  );
-}
-
-// ── Récupération des comptes ──────────────────────────────────────────────────
-
-async function fetchAllAccounts(accessToken, proof) {
-  const base = `access_token=${accessToken}&appsecret_proof=${proof}`;
-
-  // 1. BM en parallèle avec comptes directs
-  const [businesses, directAccounts] = await Promise.all([
-    fetchAllPages(`https://graph.facebook.com/v19.0/me/businesses?fields=id,name&limit=500&${base}`),
-    fetchAllPages(`https://graph.facebook.com/v19.0/me/adaccounts?fields=id,name,account_id,account_status&limit=500&${base}`),
-  ]);
-
-  const allAccounts = [];
-  const seenIds = new Set();
-
-  // 2. Pour chaque BM, owned + client en parallèle
-  if (businesses.length > 0) {
-    await Promise.all(
-      businesses.map(async (bm) => {
-        const [owned, clients] = await Promise.all([
-          fetchAllPages(`https://graph.facebook.com/v19.0/${bm.id}/owned_ad_accounts?fields=id,name,account_id,account_status&limit=500&${base}`),
-          fetchAllPages(`https://graph.facebook.com/v19.0/${bm.id}/client_ad_accounts?fields=id,name,account_id,account_status&limit=500&${base}`),
-        ]);
-
-        [...owned, ...clients].forEach((acc) => {
-          const accountId = acc.account_id || acc.id?.replace("act_", "");
-          if (!accountId || seenIds.has(accountId)) return;
-          seenIds.add(accountId);
-          allAccounts.push({
-            account_id: accountId,
-            name: acc.name || `Compte ${accountId}`,
-            businessName: bm.name,
-            businessId: bm.id,
-            status: acc.account_status,
-          });
-        });
-      })
-    );
-  }
-
-  // 3. Comptes directs hors BM
-  directAccounts.forEach((acc) => {
-    const accountId = acc.account_id || acc.id?.replace("act_", "");
-    if (!accountId || seenIds.has(accountId)) return;
-    seenIds.add(accountId);
-    allAccounts.push({
-      account_id: accountId,
-      name: acc.name || `Compte ${accountId}`,
-      businessName: "Sans BM",
-      businessId: null,
-      status: acc.account_status,
-    });
-  });
-
-  return allAccounts;
-}
-
-// ── Récupération des insights ─────────────────────────────────────────────────
-
-async function fetchInsightsForAccounts(accounts, accessToken, proof, startDate, endDate) {
-  const base = `access_token=${accessToken}&appsecret_proof=${proof}`;
-  const timeRange = encodeURIComponent(JSON.stringify({ since: startDate, until: endDate }));
-  const rows = [];
-
-  // Paralléliser par lots de 5 pour éviter le rate limit Meta
-  const BATCH_SIZE = 5;
-  for (let i = 0; i < accounts.length; i += BATCH_SIZE) {
-    const batch = accounts.slice(i, i + BATCH_SIZE);
-
-    const batchResults = await Promise.allSettled(
-      batch.map(async (account) => {
-        const insights = await fetchAllPages(
-          `https://graph.facebook.com/v19.0/act_${account.account_id}/insights?fields=campaign_name,spend,date_start,actions&level=campaign&time_increment=1&limit=500&time_range=${timeRange}&${base}`
-        );
-
-        return insights.map((item) => {
-          const leads = item.actions?.reduce((total, action) => {
-            const leadActions = [
-              "lead",
-              "onsite_conversion.lead_grouped",
-              "onsite_conversion.messaging_conversation_started_7d",
-            ];
-            return leadActions.includes(action.action_type)
-              ? total + parseFloat(action.value || 0)
-              : total;
-          }, 0) || 0;
-
-          return {
-            businessName: account.businessName,
-            businessId: account.businessId,
-            accountName: account.name,
-            accountId: account.account_id,
-            campaignName: item.campaign_name || "Sans nom",
-            spend: parseFloat(item.spend || 0),
-            leads,
-            date: item.date_start,
-          };
-        });
-      })
-    );
-
-    batchResults.forEach((result) => {
-      if (result.status === "fulfilled") rows.push(...result.value);
-      else console.error("Batch error:", result.reason);
-    });
-  }
-
-  return rows;
-}
-
-// ── Handler principal ─────────────────────────────────────────────────────────
 
 export async function POST(request) {
   try {
-    const body = await request.json();
-    const { accessToken, startDate, endDate, userId, forceRefresh } = body;
-    const proof = appSecretProof(accessToken);
-
-    // 1. Vérifier le cache (sauf si forceRefresh)
-    if (!forceRefresh && startDate && endDate) {
-      const cached = await getCachedRows(userId, startDate, endDate);
-      if (cached) {
-        console.log(`Cache hit pour ${userId} ${startDate}-${endDate}`);
-        const accounts = await fetchAllAccounts(accessToken, proof);
-        const accountList = accounts.map((a) => ({
-          accountId: a.account_id,
-          accountName: a.name,
-          businessName: a.businessName,
-          businessId: a.businessId,
-          status: a.status,
-        }));
-        return Response.json({ rows: cached, accountList, fromCache: true });
-      }
+    const { accessToken, metaId } = await request.json();
+    if (!accessToken || !metaId) {
+      return Response.json({ error: "accessToken et metaId requis" }, { status: 400 });
     }
 
-    // 2. Récupérer tous les comptes en parallèle
-    const allAccounts = await fetchAllAccounts(accessToken, proof);
+    const proof = crypto
+      .createHmac("sha256", process.env.META_APP_SECRET)
+      .update(accessToken)
+      .digest("hex");
 
-    const accountList = allAccounts.map((a) => ({
-      accountId: a.account_id,
-      accountName: a.name,
-      businessName: a.businessName,
-      businessId: a.businessId,
-      status: a.status,
-    }));
+    const base = `access_token=${accessToken}&appsecret_proof=${proof}`;
+    const id = metaId.trim();
 
-    // 3. Récupérer les insights si période fournie
-    let rows = [];
-    if (startDate && endDate) {
-      rows = await fetchInsightsForAccounts(allAccounts, accessToken, proof, startDate, endDate);
+    // On essaie les 3 types dans l'ordre : ad → adset → campaign
+    // Chaque appel retourne les infos + les parents via les champs imbriqués
 
-      // 4. Mettre en cache
-      if (rows.length > 0) {
-        await setCachedRows(userId, startDate, endDate, rows).catch(console.error);
+    // ── 1. Essai en tant que Ad ───────────────────────────────────────────────
+    try {
+      const ad = await fetchMeta(
+        `https://graph.facebook.com/v19.0/${id}?fields=id,name,status,adset{id,name,campaign{id,name,account_id}},account_id&${base}`
+      );
+
+      if (ad.adset) {
+        // Récupérer le compte pub
+        const accountId = ad.account_id || ad.adset?.campaign?.account_id;
+        let accountName = accountId ? `act_${accountId}` : "—";
+        let businessName = "—";
+
+        if (accountId) {
+          try {
+            const account = await fetchMeta(
+              `https://graph.facebook.com/v19.0/act_${accountId}?fields=name,business{id,name}&${base}`
+            );
+            accountName = account.name || accountName;
+            businessName = account.business?.name || "Sans BM";
+          } catch {}
+        }
+
+        return Response.json({
+          type: "Ad (Publicité)",
+          id: ad.id,
+          name: ad.name,
+          status: ad.status,
+          adSet: { id: ad.adset?.id, name: ad.adset?.name },
+          campaign: { id: ad.adset?.campaign?.id, name: ad.adset?.campaign?.name },
+          account: { id: accountId, name: accountName },
+          business: { name: businessName },
+        });
       }
-    }
+    } catch {}
 
-    return Response.json({ rows, accountList, fromCache: false });
+    // ── 2. Essai en tant que Ad Set ───────────────────────────────────────────
+    try {
+      const adset = await fetchMeta(
+        `https://graph.facebook.com/v19.0/${id}?fields=id,name,status,campaign{id,name,account_id},account_id&${base}`
+      );
+
+      if (adset.campaign) {
+        const accountId = adset.account_id || adset.campaign?.account_id;
+        let accountName = accountId ? `act_${accountId}` : "—";
+        let businessName = "—";
+
+        if (accountId) {
+          try {
+            const account = await fetchMeta(
+              `https://graph.facebook.com/v19.0/act_${accountId}?fields=name,business{id,name}&${base}`
+            );
+            accountName = account.name || accountName;
+            businessName = account.business?.name || "Sans BM";
+          } catch {}
+        }
+
+        return Response.json({
+          type: "Ad Set (Ensemble de publicités)",
+          id: adset.id,
+          name: adset.name,
+          status: adset.status,
+          adSet: { id: adset.id, name: adset.name },
+          campaign: { id: adset.campaign?.id, name: adset.campaign?.name },
+          account: { id: accountId, name: accountName },
+          business: { name: businessName },
+        });
+      }
+    } catch {}
+
+    // ── 3. Essai en tant que Campaign ─────────────────────────────────────────
+    try {
+      const campaign = await fetchMeta(
+        `https://graph.facebook.com/v19.0/${id}?fields=id,name,status,account_id&${base}`
+      );
+
+      if (campaign.account_id) {
+        let accountName = `act_${campaign.account_id}`;
+        let businessName = "—";
+
+        try {
+          const account = await fetchMeta(
+            `https://graph.facebook.com/v19.0/act_${campaign.account_id}?fields=name,business{id,name}&${base}`
+          );
+          accountName = account.name || accountName;
+          businessName = account.business?.name || "Sans BM";
+        } catch {}
+
+        return Response.json({
+          type: "Campagne",
+          id: campaign.id,
+          name: campaign.name,
+          status: campaign.status,
+          adSet: null,
+          campaign: { id: campaign.id, name: campaign.name },
+          account: { id: campaign.account_id, name: accountName },
+          business: { name: businessName },
+        });
+      }
+    } catch {}
+
+    return Response.json({ error: "ID introuvable. Vérifie qu'il s'agit d'un ID Meta valide et que tu as les droits d'accès." }, { status: 404 });
+
   } catch (error) {
     console.error(error);
-    return Response.json({ error: "Erreur serveur" }, { status: 500 });
+    return Response.json({ error: error.message || "Erreur serveur" }, { status: 500 });
   }
 }
