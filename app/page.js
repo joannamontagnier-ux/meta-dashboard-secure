@@ -695,7 +695,7 @@ export default function Home() {
             <span style={{ fontSize: "18px", fontWeight: 700, color: "#111827", letterSpacing: "-0.5px" }}>MetaBoard</span>
           </div>
           <div style={{ display: "flex", gap: "6px", flex: 1, justifyContent: "center", flexWrap: "wrap" }}>
-            {[["global", "Vue globale"], ["bm", "Par BM"], ["client", "Par client"], ["campaign", "Par campagne"], ["charts", "Graphiques"]].map(([v, label]) => (
+            {[["global", "Vue globale"], ["bm", "Par BM"], ["client", "Par client"], ["campaign", "Par campagne"], ["lookup", "🔍 ID"]].map(([v, label]) => (
               <button key={v} onClick={() => setActiveView(v)} style={activeView === v ? activeTabStyle : tabStyle}>{label}</button>
             ))}
           </div>
