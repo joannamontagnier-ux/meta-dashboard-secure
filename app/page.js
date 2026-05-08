@@ -339,15 +339,23 @@ export default function Home() {
         if (metaUserId) window.localStorage.setItem(getStorageKey(metaUserId, "accountList"), JSON.stringify(data.accountList));
       }
 
-      if (data.rows?.length > 0) {
+      if (data.error) {
+        setLoadStatus(data.error);
+      } else if (data.rows?.length > 0) {
         const nextRows = mergeCampaignRows(rows, data.rows);
         saveCampaignRows(nextRows);
         const cacheLabel = data.fromCache ? " · ⚡ depuis le cache" : "";
-        setLoadStatus(`${data.rows.length} campagne(s) chargée(s) · ${data.accountList?.length || 0} compte(s)${cacheLabel}.`);
+        const warnLabel = data.warnings?.length ? ` · ⚠️ ${data.warnings[0]}` : "";
+        setLoadStatus(`${data.rows.length} campagne(s) chargée(s) · ${data.accountList?.length || 0} compte(s)${cacheLabel}${warnLabel}.`);
       } else {
         setLoadStatus(`Aucune dépense sur cette période · ${data.accountList?.length || 0} compte(s) trouvé(s).`);
       }
-    } catch (e) { console.log(e); setLoadStatus("Erreur de chargement. Les données précédentes sont conservées."); }
+    } catch (e) {
+      console.log(e);
+      const msg = e.message || "";
+      const isKnown = msg.startsWith("🔑") || msg.startsWith("⏱") || msg.startsWith("🚫") || msg.startsWith("🔍") || msg.startsWith("❌");
+      setLoadStatus(isKnown ? msg : "❌ Erreur de chargement. Les données précédentes sont conservées.");
+    }
     setLoading(false);
   }
 
