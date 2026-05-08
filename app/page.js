@@ -632,10 +632,18 @@ export default function Home() {
             <button
               onClick={() => setAutoRefresh(!autoRefresh)}
               title={autoRefresh ? `Prochain refresh dans ${nextRefreshIn ?? "…"} min` : "Auto-refresh désactivé"}
-              style={{ ...autoRefreshBtnStyle, background: autoRefresh ? "#f0fdf4" : "#f9fafb", borderColor: autoRefresh ? "#86efac" : "#e5e7eb", color: autoRefresh ? "#166534" : "#9ca3af" }}
+              style={{ ...autoRefreshBtnStyle, background: autoRefresh ? "#f0fdf4" : "#f9fafb", borderColor: autoRefresh ? "#86efac" : "#e5e7eb", color: autoRefresh ? "#166634" : "#9ca3af" }}
             >
               <span style={{ fontSize: "10px" }}>{autoRefresh ? "●" : "○"}</span>
               {autoRefresh ? `Refresh ${nextRefreshIn ?? "…"}min` : "Auto-refresh off"}
+            </button>
+            <button
+              onClick={() => loadData(true)}
+              disabled={loading}
+              title="Ignorer le cache et recharger depuis Meta"
+              style={{ padding: "6px 12px", borderRadius: "20px", border: "1px solid #e5e7eb", background: "white", color: "#374151", fontSize: "12px", fontWeight: 500, cursor: "pointer" }}
+            >
+              🔄 Forcer
             </button>
             <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "6px 12px", borderRadius: "20px", background: "#f3f4f6", border: "1px solid #e5e7eb" }}>
               <div style={{ width: "24px", height: "24px", borderRadius: "50%", background: "#6366f1", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "11px", fontWeight: 700 }}>{metaUserName?.[0]?.toUpperCase() || "M"}</div>
