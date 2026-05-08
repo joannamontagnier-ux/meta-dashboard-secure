@@ -671,14 +671,6 @@ export default function Home() {
               <span style={{ fontSize: "10px" }}>{autoRefresh ? "●" : "○"}</span>
               {autoRefresh ? `Refresh ${nextRefreshIn ?? "…"}min` : "Auto-refresh off"}
             </button>
-            <button
-              onClick={() => loadData(true)}
-              disabled={loading}
-              title="Ignorer le cache et recharger depuis Meta"
-              style={{ padding: "6px 12px", borderRadius: "20px", border: "1px solid #e5e7eb", background: "white", color: "#374151", fontSize: "12px", fontWeight: 500, cursor: "pointer" }}
-            >
-              🔄 Forcer
-            </button>
             <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "6px 12px", borderRadius: "20px", background: "#f3f4f6", border: "1px solid #e5e7eb" }}>
               <div style={{ width: "24px", height: "24px", borderRadius: "50%", background: "#6366f1", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "11px", fontWeight: 700 }}>{metaUserName?.[0]?.toUpperCase() || "M"}</div>
               <span style={{ fontSize: "13px", fontWeight: 500, color: "#374151" }}>{metaUserName || "Connecté"}</span>
@@ -742,7 +734,7 @@ export default function Home() {
 
             <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
               <button onClick={() => loadData(false)} style={primaryActionStyle} disabled={loading}>{loading ? "⏳ Chargement..." : "⬇ Charger les campagnes"}</button>
-              <button onClick={() => loadData(true)} style={{ ...secondaryActionStyle, fontSize: "12px" }} disabled={loading} title="Ignorer le cache et recharger depuis Meta">🔄 Forcer</button>
+              <button onClick={() => loadData(true)} style={secondaryActionStyle} disabled={loading} title="Ignorer le cache et recharger depuis Meta">🔄 Forcer</button>
               <button onClick={addManualRow} style={secondaryActionStyle}>+ Ajouter une ligne</button>
               {isDevelopment && <button onClick={loadDemoData} style={secondaryActionStyle}>🎯 Données test</button>}
               <button onClick={() => importInputRef.current?.click()} style={secondaryActionStyle}>📥 Import CSV</button>
@@ -1219,7 +1211,7 @@ const userCardStyle = { display: "flex", alignItems: "center", gap: "10px", padd
 const overlayStyle = { position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", zIndex: 99 };
 const mainStyle = { flex: 1, display: "flex", flexDirection: "column", minWidth: 0 };
 const topbarStyle = { display: "flex", alignItems: "center", gap: "16px", padding: "0 24px", height: "64px", background: "white", borderBottom: "1px solid #e5e7eb", position: "sticky", top: 0, zIndex: 50 };
-const tabStyle = { padding: "7px 16px", borderRadius: "20px", border: "1px solid #e5e7eb", background: "white", color: "#6b7280", fontSize: "13px", fontWeight: 500, cursor: "pointer" };
+const tabStyle = { padding: "5px 11px", borderRadius: "20px", border: "1px solid #e5e7eb", background: "white", color: "#6b7280", fontSize: "12px", fontWeight: 500, cursor: "pointer", whiteSpace: "nowrap" };
 const activeTabStyle = { ...tabStyle, background: "#111827", color: "white", border: "1px solid #111827" };
 const contentStyle = { padding: "20px 24px", flex: 1 };
 const filterPanelStyle = { background: "white", borderRadius: "14px", padding: "20px", marginBottom: "20px", border: "1px solid #e5e7eb" };
