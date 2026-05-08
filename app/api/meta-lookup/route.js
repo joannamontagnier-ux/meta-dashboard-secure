@@ -7,10 +7,33 @@ function appSecretProof(accessToken) {
     .digest("hex");
 }
 
+function parseMetaError(error) {
+  if (!error) return "Erreur inconnue.";
+  const code = error.code;
+  const subcode = error.error_subcode;
+  const msg = error.message || "";
+
+  if (code === 4 || code === 17 || code === 32 || code === 613)
+    return "⏱ Limite de requêtes Meta atteinte. Attends quelques minutes et réessaie.";
+  if (code === 190) {
+    if (subcode === 463) return "🔑 Session Meta expirée. Déconnecte-toi et reconnecte-toi.";
+    if (subcode === 460) return "🔑 Mot de passe Meta changé. Reconnecte-toi.";
+    return "🔑 Token Meta invalide ou expiré. Reconnecte-toi à Meta.";
+  }
+  if (code === 200 || code === 10 || code === 3)
+    return "🚫 Permission refusée. Vérifie que l'app a accès à 'ads_read' et 'business_management'.";
+  if (code === 100 && msg.toLowerCase().includes("does not exist"))
+    return "🔍 ID introuvable. Vérifie qu'il s'agit d'un ID Meta valide et que tu as les droits d'accès.";
+  if (code === 273)
+    return "🚫 Accès refusé à ce compte. Il est peut-être archivé ou tu n'as plus les droits.";
+  if (msg) return `❌ Erreur Meta : ${msg}`;
+  return "❌ Erreur Meta inconnue. Réessaie ou reconnecte-toi.";
+}
+
 async function fetchMeta(url) {
   const res = await fetch(url);
   const data = await res.json();
-  if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+  if (data.error) throw new Error(parseMetaError(data.error));
   return data;
 }
 
@@ -132,10 +155,13 @@ export async function POST(request) {
       }
     } catch {}
 
-    return Response.json({ error: "ID introuvable. Vérifie qu'il s'agit d'un ID Meta valide et que tu as les droits d'accès." }, { status: 404 });
+    return Response.json({ error: "🔍 ID introuvable. Vérifie qu'il s'agit d'un ID Meta valide et que tu as les droits d'accès." }, { status: 404 });
 
   } catch (error) {
     console.error(error);
-    return Response.json({ error: error.message || "Erreur serveur" }, { status: 500 });
+    const message = error.message?.startsWith("🔑") || error.message?.startsWith("⏱") || error.message?.startsWith("🚫") || error.message?.startsWith("🔍") || error.message?.startsWith("❌")
+      ? error.message
+      : `❌ Erreur serveur : ${error.message || "Réessaie."}`;
+    return Response.json({ error: message }, { status: 500 });
   }
 }
