@@ -126,6 +126,11 @@ export default function Home() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const PAGE_SIZE = 20;
+  const [lookupId, setLookupId] = useState("");
+  const [lookupResult, setLookupResult] = useState(null);
+  const [lookupLoading, setLookupLoading] = useState(false);
+  const [lookupError, setLookupError] = useState("");
+  const [lookupHistory, setLookupHistory] = useState([]);
   const [showAll, setShowAll] = useState(false);
   const [globalPage, setGlobalPage] = useState(1);
   const [autoRefresh, setAutoRefresh] = useState(true);
@@ -340,6 +345,35 @@ export default function Home() {
       }
     } catch (e) { console.log(e); setLoadStatus("Erreur de chargement. Les données précédentes sont conservées."); }
     setLoading(false);
+  }
+
+  async function lookupMetaId() {
+    if (!lookupId.trim()) return;
+    if (!token) { setLookupError("Connecte-toi à Meta d'abord."); return; }
+    setLookupLoading(true);
+    setLookupResult(null);
+    setLookupError("");
+    try {
+      const res = await fetch("/api/meta-lookup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accessToken: token, metaId: lookupId.trim() }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        setLookupError(data.error);
+      } else {
+        setLookupResult(data);
+        // Ajouter à l'historique (max 10)
+        setLookupHistory((prev) => {
+          const next = [{ id: lookupId.trim(), result: data, date: new Date().toLocaleTimeString("fr-FR") }, ...prev];
+          return next.slice(0, 10);
+        });
+      }
+    } catch (e) {
+      setLookupError("Erreur de connexion. Réessaie.");
+    }
+    setLookupLoading(false);
   }
 
   function loadDemoData() {
@@ -594,7 +628,7 @@ export default function Home() {
           <button onClick={() => setSidebarOpen(false)} style={iconButtonStyle}>✕</button>
         </div>
         <nav style={navStyle}>
-          {[["global", "📊", "Vue globale"], ["bm", "🏢", "Par BM"], ["client", "👤", "Par client"], ["campaign", "📢", "Par campagne"], ["charts", "📈", "Graphiques"]].map(([v, icon, label]) => (
+          {[["global", "📊", "Vue globale"], ["bm", "🏢", "Par BM"], ["client", "👤", "Par client"], ["campaign", "📢", "Par campagne"], ["charts", "📈", "Graphiques"], ["lookup", "🔍", "Recherche ID"]].map(([v, icon, label]) => (
             <button key={v} onClick={() => { setActiveView(v); setSidebarOpen(false); }} style={activeView === v ? activeNavStyle : navItemStyle}>
               <span style={{ marginRight: "10px" }}>{icon}</span>{label}
             </button>
@@ -624,7 +658,7 @@ export default function Home() {
             <span style={{ fontSize: "18px", fontWeight: 700, color: "#111827", letterSpacing: "-0.5px" }}>MetaBoard</span>
           </div>
           <div style={{ display: "flex", gap: "6px", flex: 1, justifyContent: "center", flexWrap: "wrap" }}>
-            {[["global", "Vue globale"], ["bm", "Par BM"], ["client", "Par client"], ["campaign", "Par campagne"], ["charts", "Graphiques"]].map(([v, label]) => (
+            {[["global", "Vue globale"], ["bm", "Par BM"], ["client", "Par client"], ["campaign", "Par campagne"], ["charts", "Graphiques"], ["lookup", "🔍 ID"]].map(([v, label]) => (
               <button key={v} onClick={() => setActiveView(v)} style={activeView === v ? activeTabStyle : tabStyle}>{label}</button>
             ))}
           </div>
@@ -794,6 +828,92 @@ export default function Home() {
 
           {activeView === "client" && <SummaryTable title="Performance par client" labelHeader="Client" rows={paginatedClientRows} totalRows={clientRows.length} currentPage={clientPage} totalPages={totalClientPages} onPageChange={setClientPage} showAll={showAll} onToggleAll={() => { setShowAll(!showAll); setClientPage(1); }} />}
           {activeView === "campaign" && <SummaryTable title="Performance par campagne" labelHeader="Campagne" rows={paginatedCampaignRows} totalRows={campaignRows.length} currentPage={campaignPage} totalPages={totalCampaignPages} onPageChange={setCampaignPage} showAll={showAll} onToggleAll={() => { setShowAll(!showAll); setCampaignPage(1); }} />}
+
+          {activeView === "lookup" && (
+            <div style={{ maxWidth: "720px" }}>
+              <div style={tableCardStyle}>
+                <div style={tableHeaderStyle}>
+                  <h2 style={sectionTitleStyle}>🔍 Recherche par ID Meta</h2>
+                </div>
+                <div style={{ padding: "24px" }}>
+                  <p style={{ fontSize: "14px", color: "#6b7280", marginBottom: "16px" }}>
+                    Colle l'ID d'une publicité, d'un ensemble de pub ou d'une campagne Meta pour retrouver immédiatement à quel BM et compte pub elle appartient.
+                  </p>
+                  <div style={{ display: "flex", gap: "10px", marginBottom: "20px" }}>
+                    <input
+                      type="text"
+                      value={lookupId}
+                      onChange={(e) => setLookupId(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && lookupMetaId()}
+                      placeholder="Ex: 120218190554780573"
+                      style={{ ...filterInputStyle, flex: 1, fontSize: "15px", padding: "12px 14px" }}
+                    />
+                    <button
+                      onClick={lookupMetaId}
+                      disabled={lookupLoading || !lookupId.trim()}
+                      style={{ ...primaryActionStyle, padding: "12px 24px", fontSize: "15px" }}
+                    >
+                      {lookupLoading ? "⏳ Recherche..." : "🔍 Rechercher"}
+                    </button>
+                  </div>
+
+                  {lookupError && (
+                    <div style={{ padding: "14px 16px", borderRadius: "10px", background: "#fee2e2", color: "#991b1b", fontSize: "14px", marginBottom: "16px" }}>
+                      ⚠️ {lookupError}
+                    </div>
+                  )}
+
+                  {lookupResult && (
+                    <div style={{ border: "1px solid #e5e7eb", borderRadius: "12px", overflow: "hidden", marginBottom: "24px" }}>
+                      <div style={{ background: "#f8fafc", padding: "14px 18px", borderBottom: "1px solid #e5e7eb", display: "flex", alignItems: "center", gap: "10px" }}>
+                        <span style={{ background: "#6366f1", color: "white", padding: "3px 10px", borderRadius: "20px", fontSize: "12px", fontWeight: 600 }}>{lookupResult.type}</span>
+                        <span style={{ fontSize: "14px", fontWeight: 600, color: "#111827" }}>{lookupResult.name}</span>
+                        <span style={{ fontSize: "12px", color: lookupResult.status === "ACTIVE" ? "#10b981" : "#9ca3af", marginLeft: "auto", fontWeight: 500 }}>
+                          {lookupResult.status === "ACTIVE" ? "● Actif" : lookupResult.status === "PAUSED" ? "⏸ Pausé" : lookupResult.status || "—"}
+                        </span>
+                      </div>
+                      <div style={{ padding: "18px" }}>
+                        {[
+                          ["🏢 Business Manager", lookupResult.business?.name],
+                          ["📁 Compte publicitaire", lookupResult.account?.name, lookupResult.account?.id ? `ID: ${lookupResult.account.id}` : null],
+                          ["📢 Campagne", lookupResult.campaign?.name, lookupResult.campaign?.id ? `ID: ${lookupResult.campaign.id}` : null],
+                          lookupResult.adSet ? ["📦 Ensemble de pub", lookupResult.adSet?.name, lookupResult.adSet?.id ? `ID: ${lookupResult.adSet.id}` : null] : null,
+                          ["🆔 ID recherché", lookupResult.id],
+                        ].filter(Boolean).map(([label, value, sub]) => (
+                          <div key={label} style={{ display: "flex", alignItems: "flex-start", gap: "12px", padding: "10px 0", borderBottom: "1px solid #f3f4f6" }}>
+                            <span style={{ fontSize: "13px", color: "#6b7280", minWidth: "200px", fontWeight: 500 }}>{label}</span>
+                            <div>
+                              <span style={{ fontSize: "13px", color: "#111827", fontWeight: 600 }}>{value || "—"}</span>
+                              {sub && <div style={{ fontSize: "11px", color: "#9ca3af", marginTop: "2px", fontFamily: "monospace" }}>{sub}</div>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {lookupHistory.length > 0 && (
+                    <div>
+                      <div style={{ fontSize: "12px", fontWeight: 600, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "10px" }}>Historique</div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                        {lookupHistory.map((item, i) => (
+                          <div
+                            key={i}
+                            onClick={() => { setLookupId(item.id); setLookupResult(item.result); setLookupError(""); }}
+                            style={{ display: "flex", alignItems: "center", gap: "10px", padding: "10px 14px", borderRadius: "8px", border: "1px solid #e5e7eb", cursor: "pointer", background: "white" }}
+                          >
+                            <span style={{ fontSize: "11px", fontFamily: "monospace", color: "#6b7280", background: "#f3f4f6", padding: "2px 8px", borderRadius: "4px" }}>{item.id}</span>
+                            <span style={{ fontSize: "12px", color: "#374151", fontWeight: 500 }}>{item.result.name}</span>
+                            <span style={{ fontSize: "11px", color: "#9ca3af", marginLeft: "auto" }}>{item.result.type} · {item.date}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
           {activeView === "charts" && (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(500px, 1fr))", gap: "20px" }}>
